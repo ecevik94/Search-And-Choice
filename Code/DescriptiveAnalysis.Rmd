@@ -1,6 +1,6 @@
 ---
 title: "Descriptive data analysis"
-author: "Emine"
+author: "Emine Cevik"
 date: "2023-06-18"
 output: html_document
 ---

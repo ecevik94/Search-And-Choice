@@ -1,7 +1,7 @@
 ---
 title: "Descriptive data analysis - summary"
-author: "Emine"
-date: "2023-07-09"
+author: "Emine Cevik"
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
@@ -27,23 +27,27 @@ library(gridExtra)
 library(MASS)
 library(fpCompare)
 library(caret)
+library(ggridges)
 ```
 
 # Descriptive Analysis 
-  - I will use mostly subset_dt.xlsx
-  - Switching ratio and proportion of choices (eg: seen_exval_chosen) will be most important metrics
+  - I will use mostly subset_dt.csv
+  - Switching ratio and proportion of choices (seen_exval_chosen & seen_winner_chosen) will be most important metrics
+  
   - Sampling_total + switching ratio together will be used for sampling clusters which 
-  will be secondary. 
-  - option has higher and option that is a winner for piecewise comparison 
+  will be secondary. --> Might be used for discussion later 
+  
+  - option has higher exval and option that is a winner for piecewise comparison 
     - check if they are the same option
 
 ## Create the data set and simple statistics related to the data source
 
 ```{r, warning = FALSE, echo = TRUE}
 #read the file 
-main_dt <- as.data.table(read.xlsx(here("Data", "subset_dt.xlsx")))
+main_dt <- as.data.table(read.csv(here("Data", "subset_dt.csv")))
 colnames(main_dt)
 ```
+
 ```{r, warning = FALSE, echo = TRUE}
 
 # Number of different session (identifier) 
@@ -119,24 +123,46 @@ min(main_dt$sampling_total)
 
 main_dt[ sampling_total == 1, .N]
 
+cat("mean: ", mean(main_dt$sampling_total), "\n")
+cat("median: ", median(main_dt$sampling_total), "\n")
+cat("max: ", max(main_dt$sampling_total), "\n")
+cat("min: ", min(main_dt$sampling_total), "\n")
+
 ```
 Histogram for sampling total 
 
 ```{r, warning = FALSE, echo = TRUE}
 
-# Create a histogram with a bin size of 2 
+# Create a histogram with a bin size of  
 # added median line to the graph
 
 ggplot(main_dt, aes(x = sampling_total)) + geom_histogram(binwidth = 1, fill="black", col="grey") + 
   geom_vline(xintercept = median(main_dt$sampling_total), linetype = "dashed", color = "red", size = 1) + 
   labs(title = "Histogram of Sampling Total",
        x = "Sampling Total",
-       y = "Frequency")
+       y = "Frequency") + theme_ridges()
 ```
 
-We seem right skewed histogram, with the local peaks for 2, 4, 10, 20
+- We seem right skewed histogram, with the local peaks for 2, 4, 10, 20. 
 
-### Switching_total: number of times the participant chance option sampled
+- 2 is the most frequent sampling_total
+
+- Numbers are aligned with Meta-Analytic Review of Two Modes paper
+
+```{r}
+
+ggplot(main_dt, aes(x = sampling_total)) + geom_density(aes(color = dom)) + theme_ridges()
+
+```
+Different domains also have similar distribution.
+
+```{r}
+
+ggplot(main_dt, aes(x = dom, y = sampling_total)) + geom_violin() + theme_ridges()
+
+```
+
+### sampling_total_switch: number of times the participant chance option sampled
 
 ```{r,  warning = FALSE, echo = TRUE}
 
@@ -144,6 +170,11 @@ mean(main_dt$sampling_total_switch)
 median(main_dt$sampling_total_switch)
 max(main_dt$sampling_total_switch)
 min(main_dt$sampling_total_switch)
+
+cat("mean: ", mean(main_dt$sampling_total_switch), "\n")
+cat("median: ", median(main_dt$sampling_total_switch), "\n")
+cat("max: ", max(main_dt$sampling_total_switch), "\n")
+cat("min: ", min(main_dt$sampling_total_switch), "\n")
 
 main_dt[ sampling_total_switch == 0, .N]
 ```
@@ -159,15 +190,26 @@ ggplot(main_dt, aes(x = sampling_total_switch)) + geom_histogram(binwidth = 1, f
   geom_vline(xintercept = median(main_dt$sampling_total_switch), linetype = "dashed", color = "red", size = 1) + 
   labs(title = "Histogram of Sampling Total",
        x = "Switching Total",
-       y = "Frequency")
+       y = "Frequency") +  theme_pubr()
+```
+Similar to sampling_total, we see right skewed histogram for sampling_total_switch
+ 
+
+```{r}
+
+ggplot(main_dt, aes(x = sampling_total_switch)) + geom_density(aes(color = dom)) + theme_ridges()
+
 ```
 
-Similar to sampling_total, we see right skewed histogram for switching total. 
-  Note: there are some cases that we don't see any switching. We may not want to include them to the analysis. 
+The distribution of sampling_total_switch is quite similar for the different domains. 
 
+```{r}
+
+ggplot(main_dt, aes(x = dom, y = sampling_total_switch)) + geom_violin() + theme_ridges()
+
+```
 ### Switching ratio : (sampling_total_switch/ (sampling_total - 1 ))
 
-We might not want to include cases with sampling_total is equal to 1. There are 48 cases of such instances. 
 
 ```{r}
 mean(main_dt$sampling_switch_ratio, na.rm = TRUE)
@@ -195,76 +237,107 @@ ggplot(main_dt, aes(x = sampling_switch_ratio)) + geom_histogram( fill="black", 
   geom_vline(xintercept = median(main_dt$sampling_switch_ratio, na.rm = TRUE), linetype = "dashed", color = "red", size = 1) + 
   labs(title = "Histogram of switching ratio",
        x = "Switching ratio",
-       y = "Frequency")
+       y = "Frequency") + theme_ridges()
 
 
 ```
 
-It is interesting to see high number of cases where switching ratio is equal to 1 
+It is interesting to see high number of cases where switching ratio is equal to 1. 
+
+(When it is closer to 1, it shows frequent switching behavior)
 
 Also it seems like there are clearly two different groups which is what we can pursue and ask questions about them 
 
-
-### Relationship between sampling total (trials) and total switch 
-``````{r, warning = FALSE, echo = TRUE}
-
-ggplot(main_dt, aes(x = sampling_total, y = sampling_total_switch)) + geom_point() + 
-  geom_textvline(label = "median of sampling total", xintercept = median(main_dt$sampling_total), color = "red") + 
-  geom_texthline(label = "median of total switch", yintercept = median(main_dt$sampling_total_switch), color = "red") +
-  geom_textabline(label = "median of switch ratio", slope = median(main_dt$sampling_switch_ratio, na.rm = TRUE), color = "red")
-```
-### Round ratio: will be added after correcting round definition
-
-```{r}
-
-
-```
+--> Bimodel distribution
 
 
 ```{r}
 
+ggplot(main_dt, aes(x = sampling_switch_ratio)) + geom_density(aes(color = dom)) + theme_ridges()
+
+```
+
+```{r}
+
+ggplot(main_dt, aes(x = dom, y = sampling_switch_ratio)) + geom_violin() + theme_ridges() +
+  scale_y_continuous(limits=c(-0.5 , 1.5))
+
+```
+When domain is meixed, we see higher proportion of low switching ratio compared to others. 
+
+Is there any significant difference between 3 groups ?
+
+```{r}
+
+# Compute the analysis of variance
+res.aov <- aov(sampling_switch_ratio ~ dom, data = main_dt)
+# Summary of the analysis
+summary(res.aov)
+
+```
+significant difference
+
+*BUT AND BIG BUT*
+
+Anova's assumptions of normality & equal variances are not met
+
+### Relationship between sampling_total and sampling_switch_ratio
+
+```{r}
+# create sampling_switch_ratio_2, by round sampling_switch_ratio to 2 
+main_dt[, sampling_switch_ratio_2 := round(sampling_total_switch/(sampling_total - 1), 2)]
+
+# create sampling_switch_ratio_1, by round sampling_switch_ratio to 1
+main_dt[, sampling_switch_ratio_1 := round(sampling_total_switch/(sampling_total - 1), 1)]
+```
+
+
+sampling_total vs sampling_switch_ratio_mean
+
+```{r}
+
+# find the mean sampling_switch_ratio by sampling_total 
+main_dt[, sampling_switch_ratio_mean := round(mean(sampling_switch_ratio),2), by = sampling_total]
+
+#ggplot(main_dt, aes( x = sampling_total, y = sampling_switch_ratio_mean)) + geom_point() 
+ggplot(main_dt) + geom_point( aes( x = sampling_total, y = sampling_switch_ratio), color = "gray", fill = "gray") +
+  geom_point(aes( x = sampling_total, y = sampling_switch_ratio_mean) ,color = "red", fill = "red") 
+
+ggplot(main_dt) + geom_point( aes( x = sampling_total, y = sampling_switch_ratio), color = "gray", fill = "gray") +
+  geom_point(aes( x = sampling_total, y = sampling_switch_ratio_mean) ,color = "red", fill = "red") + facet_grid(dom ~ .)
+
+#cor(main_dt$sampling_total, main_dt$sampling_switch_ratio_mean)
+```
+High switching ratio --> low number samples 
+
+Correlation between switch ratio and sampling total
+
+```{r}
+
+cor(main_dt$sampling_total, main_dt$sampling_switch_ratio_mean, use = "complete.obs")
 
 ```
 
 # Sampling strategies 
 
-The most important question will ask will be : How is sampling ratio and proportion of seen_exval works together?
+The most important question will ask will be : How is sampling switch ratio and proportion of seen_exval works together?
 
 Before going into details for that, let's check seen_exval and seen_exval_chosen and understand their definition clearly. 
 
 seen_exval shows the which option has higher expected value. If both option have same expected value, then it will be NA. Same definition used with "exval" 
 
-!!!! Question: When is the difference between seen_evA and seen_evB significantly small?
+!!!! Question: When is the difference between seen_evA and seen_evB significantly small? --> Ignore
 
-## Create decision variables
+## Create seen_winner_chosen and seen_exval_chosen
 
 ```{r}
 
-# Let's create a column called "seen_exval_chosen" which will show if the choice is same with the seen_exval. However if seen_exval is NA, there won't be effect. so if exval_seen is NA, seen_exval_chosen will be no difference. 
+# Let's create a column called "seen_exval_chosen" which will show if the choice is same with the seen_exval. However if
+# seen_exval is NA, there won't be effect. so if exval_seen is NA, seen_exval_chosen will be no difference. 
+
+# same logic for seen_winner_chosen
 
 main_dt[, seen_exval_chosen := ifelse(is.na(seen_exval), "no difference", ifelse(choice == seen_exval, TRUE, FALSE))]
-
-#helper_dt <- main_dt[, c("identifier", "outA1", "outA2", "outB1", "outB2", "seen_probA1", "seen_probA2", "seen_probB1", "seen_probB2", 
-                         #"probA1","probA2", "probB1", "probB2", "risky")]
-
-
-main_dt <- main_dt %>% mutate(seen_outcomeA_higher_prob = case_when 
-                                      (seen_probA1 > seen_probA2 ~ outA1,
-                                       seen_probA1 < seen_probA2 ~ outA2))
-
-main_dt <- main_dt %>% mutate(seen_optionA_higher_prob = case_when 
-                                      ( seen_probA1 > seen_probA2 ~ 'A1',
-                                        seen_probA1 < seen_probA2 ~ 'A2'))
-
-main_dt <- main_dt %>% mutate(seen_outcomeB_higher_prob = case_when 
-                                      ( seen_probB1 > seen_probB2 ~ outB1,
-                                        seen_probB1 < seen_probB2 ~ outB2))
-
-main_dt <- main_dt %>% mutate(seen_optionB_higher_prob = case_when 
-                                      ( seen_probB1 > seen_probB2 ~ 'B1',
-                                        seen_probB1 < seen_probB2 ~ 'B2'))
-
-main_dt[, seen_winner := ifelse( seen_outcomeA_higher_prob > seen_outcomeB_higher_prob, "A", "B") ]
 
 main_dt[, seen_winner_chosen := ifelse(is.na(seen_winner), "unindentified", ifelse(choice == seen_winner, TRUE, FALSE))]
 

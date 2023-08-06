@@ -59,7 +59,9 @@ na_count
 ```
 
 Time to filter the raw data 
+
 As a first step, choose the entries with cert = TRUE and type = free
+
 Secondly, eliminate ther columns that we are not going to use 
   - outA3, outA4, outA5, outB3, outB4, outB5
   - probA3, probA4, probA5, probB3, probB4, probB5
@@ -180,6 +182,7 @@ cleaned_exp <- cleaned_exp %>% unite("participant", c('id', 'subject'), sep = "-
   - seen_covB
 
 Later, I also decided to add
+
   - seen_ev_diff
   - seen_exval 
   
@@ -368,7 +371,7 @@ cleaned_exp[, seen_winner := ifelse( seen_outcomeA_higher_prob > seen_outcomeB_h
 ## Create columns related to sampling behavior
 
   - sampling_total
-  - sampling_switch
+  - sampling_switch_total
   - sampling_switch
   - sampling_switch_ratio
 
@@ -388,11 +391,11 @@ cleaned_exp[, sampling_switch := ifelse(trial == 1, "first",
 
 
 # sampling_total_switch (number of yes in the run by identifier)
-cleaned_exp[, sampling_switch_total := sum(sampling_switch == "yes"), by = identifier]
+cleaned_exp[, sampling_total_switch := sum(sampling_switch == "yes"), by = identifier]
 
 
 # sampling_switch_ratio (sampling_total_switch/(sampling_total-1))
-cleaned_exp[, sampling_switch_ratio := round(sampling_switch_total/(sampling_total-1), 3), by = identifier]
+cleaned_exp[, sampling_switch_ratio := round(sampling_total_switch/(sampling_total-1), 3), by = identifier]
 
 
 ```
@@ -455,13 +458,13 @@ columns <- c( "identifier", "participant",
               "choice", "cpt", 
               "risky", "seen_risky",
               "exval", "seen_exval",  
-              "seen_ev_diff",
+              "seen_ev_diff", "seen_all",
               "outA1", "probA1", "seen_probA1", "outA2", "probA2", "seen_probA2",
               "outB1", "probB1", "seen_probB1", "outB2", "probB2", "seen_probB2",
               "evA", "seen_evA", "seen_sameDistA", "evB", "seen_evB", "seen_sameDistB",
               "seen_winner", 
               "seen_outcomeA_higher_prob", "seen_optionA_higher_prob" , "seen_outcomeB_higher_prob","seen_optionB_higher_prob",
-              "sampling_total", "sampling_switch_total", "sampling_switch_ratio"
+              "sampling_total", "sampling_total_switch", "sampling_switch_ratio"
            )
 
 # Create a subset of cleaned_exp by identifier with selected columns
