@@ -1,0 +1,204 @@
+---
+title: "Models"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include = TRUE, echo = FALSE}
+knitr::opts_chunk$set(message = FALSE)
+```
+
+```{r}
+here::i_am("Code/Models.Rmd")
+```
+
+```{r, warning = FALSE, echo = TRUE}
+library(tidyverse)
+library(openxlsx)
+library(data.table)
+library(ggplot2)
+library(geomtextpath)
+library(psych)
+library(cluster)
+library(here)
+library(gridExtra)
+library(MASS)
+library(fpCompare)
+library(caret)
+library(ggridges)
+library(lme4)
+
+```
+
+Read main data 
+```{r, warning = FALSE, echo = TRUE}
+#read the file 
+model_dt <- as.data.table(read.csv(here("Data", "main_dt_model.csv")))
+colnames(model_dt)
+```
+
+# Logistic regression 
+
+Create training and test data 
+```{r}
+
+# Make choice numeric 
+model_dt[, choice := ifelse(choice == "A", 0, 1)]
+
+# Make seen_exval numeric 
+model_dt[, seen_exval := ifelse(seen_exval == "A", 0, 1)]
+
+# Make seen_winner numeric 
+model_dt[, seen_winner := ifelse(seen_winner == "A", 0, 1)]
+
+# Make dom numeric 
+model_dt[, dom := ifelse(dom == "Gain", 0, ifelse(dom == "Loss", 1, 2))]
+
+# Create a paper column 
+model_dt[, paper:= substr(identifier, 1, 3)  ]
+
+# Split the data into training and test set for model_dt
+# Use 80% of dataset as training set and remaining 30% as testing set
+set.seed(123)
+sample <- sample(c(TRUE, FALSE), nrow(model_dt), replace=TRUE, prob=c(0.8,0.2))
+train.model_dt <- model_dt[sample, ]
+test.model_dt <- model_dt[!sample, ]  
+
+
+```
+
+## Model with sampling_switch_ratio
+
+```{r}
+
+# Fit the model
+
+log_model1 <- glm( choice ~ sampling_switch_ratio , data = train.model_dt, family = binomial)
+
+# Summarize the model
+summary(log_model1)
+
+# Make predictions
+probabilities <- log_model1 %>% predict(test.model_dt, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+
+# Model accuracy
+mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
+
+```
+
+
+## Model with sampling_switch_ratio and sampling_total
+
+```{r}
+
+# Fit the model
+
+log_model2 <- glm( choice ~ sampling_switch_ratio + sampling_total, data = train.model_dt, family = binomial)
+
+# Summarize the model
+summary(log_model2)
+
+# Make predictions
+probabilities <- log_model2 %>% predict(test.model_dt, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+
+# Model accuracy
+mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
+
+```
+
+## Model with sampling_switch_ratio and seen_winner 
+
+```{r}
+# Fit the model
+
+log_model3 <- glm( choice ~ sampling_switch_ratio + seen_winner, data = train.model_dt, family = binomial)
+
+# Summarize the model
+summary(log_model3)
+
+# Make predictions
+probabilities <- log_model3 %>% predict(test.model_dt, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+
+# Model accuracy
+mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
+
+```
+
+## Model with sampling_switch_ratio and seen_winner and seen_exval
+
+```{r}
+# Fit the model
+
+log_model4 <- glm( choice ~ sampling_switch_ratio + seen_winner + seen_exval, data = train.model_dt, family = binomial)
+
+# Summarize the model
+summary(log_model4)
+
+# Make predictions
+probabilities <- log_model4 %>% predict(test.model_dt, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+
+# Model accuracy
+mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
+
+```
+
+## Model with sampling_switch_ratio and seen_winner and dom
+
+```{r}
+# Fit the model
+
+log_model5 <- glm( choice ~ sampling_switch_ratio + seen_winner + dom, data = train.model_dt, family = binomial)
+
+# Summarize the model
+summary(log_model5)
+
+# Make predictions
+probabilities <- log_model5 %>% predict(test.model_dt, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+
+# Model accuracy
+mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
+
+```
+
+
+# HIERARCHICAL MODELS
+
+## Model with fixed: sampling_switch_ratio and random: paper
+
+```{r}
+
+h_model1 <- glmer(choice ~ sampling_switch_ratio + (1 | paper), data = train.model_dt, family = binomial)
+
+# Summarize the model
+summary(h_model1)
+
+# Make predictions using the fitted model
+probabilities <- predict(h_model1, newdata = test.model_dt, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+
+# Model accuracy
+accuracy <- mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
+print(paste("Accuracy:", accuracy))
+
+```
+
+## Model with fixed: sampling_switch_ratio and random: participant
+
+```{r}
+
+h_model2 <- glmer(choice ~ sampling_switch_ratio + (1 | participant), data = train.model_dt, family = binomial)
+
+# Summarize the model
+summary(h_model2)
+
+# test ve trainde ayni participantlar bulunmasi lazim
+
+
+```
+
+## Model with fixed: sampling_switch_ratio and random: participant & paper

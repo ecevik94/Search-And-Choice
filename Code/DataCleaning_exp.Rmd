@@ -364,6 +364,10 @@ cleaned_exp <- cleaned_exp %>% mutate(seen_optionB_higher_prob := case_when
 
 cleaned_exp[, seen_winner := ifelse( seen_outcomeA_higher_prob > seen_outcomeB_higher_prob, "A", "B") ]
 
+# seen_winner will return in such cases:
+# - seen_probA1 and seen_probA2 are 0.5 or seen_probB1 and seen_probB2 are 0.5
+# - oen of the option has been sampled (eg: never sampled from option B)
+
 ```
   
 
@@ -458,7 +462,7 @@ columns <- c( "identifier", "participant",
               "choice", "cpt", 
               "risky", "seen_risky",
               "exval", "seen_exval",  
-              "seen_ev_diff", "seen_all",
+              "seen_ev_diff", "seen_all", "seen_A", "seen_B",
               "outA1", "probA1", "seen_probA1", "outA2", "probA2", "seen_probA2",
               "outB1", "probB1", "seen_probB1", "outB2", "probB2", "seen_probB2",
               "evA", "seen_evA", "seen_sameDistA", "evB", "seen_evB", "seen_sameDistB",

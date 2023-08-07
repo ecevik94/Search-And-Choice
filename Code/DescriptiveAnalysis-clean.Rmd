@@ -190,7 +190,7 @@ ggplot(main_dt, aes(x = sampling_total_switch)) + geom_histogram(binwidth = 1, f
   geom_vline(xintercept = median(main_dt$sampling_total_switch), linetype = "dashed", color = "red", size = 1) + 
   labs(title = "Histogram of Sampling Total",
        x = "Switching Total",
-       y = "Frequency") +  theme_pubr()
+       y = "Frequency") +  theme_ridges()
 ```
 Similar to sampling_total, we see right skewed histogram for sampling_total_switch
  
@@ -263,12 +263,12 @@ ggplot(main_dt, aes(x = dom, y = sampling_switch_ratio)) + geom_violin() + theme
   scale_y_continuous(limits=c(-0.5 , 1.5))
 
 ```
-When domain is meixed, we see higher proportion of low switching ratio compared to others. 
+When domain is mixed, we see higher proportion of low switching ratio compared to others. 
 
 Is there any significant difference between 3 groups ?
 
 ```{r}
-
+# ANOVA
 # Compute the analysis of variance
 res.aov <- aov(sampling_switch_ratio ~ dom, data = main_dt)
 # Summary of the analysis
@@ -320,7 +320,7 @@ cor(main_dt$sampling_total, main_dt$sampling_switch_ratio_mean, use = "complete.
 
 # Sampling strategies 
 
-The most important question will ask will be : How is sampling switch ratio and proportion of seen_exval works together?
+The most important question will ask will be : How is sampling switch ratio and proportion of seen_exval and seen_winner work together?
 
 Before going into details for that, let's check seen_exval and seen_exval_chosen and understand their definition clearly. 
 
@@ -332,14 +332,25 @@ seen_exval shows the which option has higher expected value. If both option have
 
 ```{r}
 
-# Let's create a column called "seen_exval_chosen" which will show if the choice is same with the seen_exval. However if
-# seen_exval is NA, there won't be effect. so if exval_seen is NA, seen_exval_chosen will be no difference. 
+#Seen_exval_chosen and seen_winner_chosen 
+# - when seen_A or seen_B is not 0 which means, participant sampled from each outcome, 
+# I check if the choice and seen_exval or seen_seen_winner are same. If seen_exval or seen_seen_winner is NA
+# I also return TRUE 
 
-# same logic for seen_winner_chosen
+main_dt[, seen_exval_chosen_NA := ifelse(seen_A == 0 | seen_B == 0, "unidentified", 
+                                      ifelse((choice == seen_exval) | is.na(seen_exval), TRUE, FALSE))]
 
-main_dt[, seen_exval_chosen := ifelse(is.na(seen_exval), "no difference", ifelse(choice == seen_exval, TRUE, FALSE))]
+main_dt[, seen_winner_chosen_NA := ifelse(seen_A == 0 | seen_B == 0, "unidentified", 
+                                      ifelse((choice == seen_winner) | is.na(seen_winner), TRUE, FALSE))]
 
-main_dt[, seen_winner_chosen := ifelse(is.na(seen_winner), "unindentified", ifelse(choice == seen_winner, TRUE, FALSE))]
+# Since I didn't like this for seen_winner_chosen_NA, I will also create seen_winner_chosen
+# in this case if seen_winner is NA, it will be also unidentified. Similarly for seen_exval
+
+main_dt[, seen_exval_chosen := ifelse(seen_A == 0 | seen_B == 0, "unidentified", 
+                                      ifelse(is.na(seen_exval), "special_chosen", ifelse(choice == seen_exval , TRUE, FALSE)))]
+
+main_dt[, seen_winner_chosen := ifelse(seen_A == 0 | seen_B == 0, "unidentified", 
+                                      ifelse(is.na(seen_winner), "special_winner", ifelse(choice == seen_winner , TRUE, FALSE)))]
 
 ```
 
@@ -353,569 +364,115 @@ main_dt[, seen_winner_chosen := ifelse(is.na(seen_winner), "unindentified", ifel
 
 main_dt[, .N , by = seen_exval_chosen]
 
-main_dt[, .N, by = c( "dom", "seen_exval_chosen")][order(seen_exval_chosen)][order(dom)]
-
 main_dt[, .N , by = seen_winner_chosen]
 
-main_dt[, .N, by = c( "dom", "seen_winner_chosen")][order(seen_winner_chosen)][order(dom)]
+main_dt[, .N , by = seen_exval_chosen_NA]
 
-main_dt[, .N, by = c("seen_exval_chosen", "seen_winner_chosen")][order(seen_winner_chosen)][order(seen_exval_chosen)]
+main_dt[, .N , by = seen_winner_chosen_NA]
 
-main_dt[seen_exval == seen_winner, .N]
+table(main_dt$seen_exval_chosen, main_dt$seen_winner_chosen)
 
-
+table(main_dt$seen_exval_chosen_NA, main_dt$seen_winner_chosen_NA)
 
 ```
 
 
 ### Switching probabilities vs. decision variables 
 
+Preparation 
+
+1- Data already has 3 types of sampling_switch_ratio
+  - sampling_switch_ratio: 3 decimal 
+  - sampling_switch_ratio_2: 2 decimal 
+  - sampling_switch_ratio_1: 1 decimal 
+  
+2- Create a column called seen_exval_winner_same 
+  - It will show if seen_exval and seen_winner are same 
+  - if seen_exval is NA and seen_A and seen_B are not equal to 0 (where seen_evA and seen_evB are equal) return true too
+  
+3- Create seen_exval_chosen_proportion based on  
+  - sampling_switch_ratio: 3 decimal 
+  - sampling_switch_ratio_2: 2 decimal 
+  - sampling_switch_ratio_1: 1 decimal 
+  
+4- Create seen_winner_chosen_proportion based on 
+  - sampling_switch_ratio: 3 decimal 
+  - sampling_switch_ratio_2: 2 decimal 
+  - sampling_switch_ratio_1: 1 decimal 
+
 ```{r}
-# Round switching ratio to 2 decimal 
-main_dt[, sampling_switch_ratio:= round(sampling_switch_ratio, 1)]
 
-# create a subset of main where seen_exval is not equal to seen_winner
-segment_dt <- main_dt[seen_exval != seen_winner, ]
+# Step 1 is already done 
 
-# Calculate proportion of choices based switch ratio - seen_exval_chosen
-main_dt[, seen_exval_chosen_proportion := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N ,1), by = sampling_switch_ratio]
-segment_dt[, seen_exval_chosen_proportion := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N ,1), by = sampling_switch_ratio]
+# Step 2: column seen_exval_winner_same 
 
-# Calculate proportion of choices based switch ratio - seen_winner_chosen
-main_dt[, seen_winner_chosen_proportion := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N ,1), by = sampling_switch_ratio]
-segment_dt[, seen_winner_chosen_proportion := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N ,1), by = sampling_switch_ratio]
+main_dt[, seen_exval_winner_same := ifelse(seen_A == 0 | seen_B == 0, "unidentified", 
+                                           ifelse(is.na(seen_exval) | is.na(seen_winner), "special", 
+                                                  ifelse(seen_exval == seen_winner, TRUE, FALSE)))]
 
-# Create graphs: sampling_switch_ratio vs seen_exval_chosen_proportion
-
-ggplot(main_dt, aes(x = sampling_switch_ratio, y = seen_exval_chosen_proportion)) + geom_line() + geom_point() + geom_smooth()
-
-ggplot(segment_dt, aes(x = sampling_switch_ratio, y = seen_exval_chosen_proportion)) + geom_line() + geom_point() + geom_smooth()
+main_dt[, seen_exval_winner_same_NA := ifelse(seen_A == 0 | seen_B == 0, "unidentified", 
+                                              ifelse(seen_exval == seen_winner | is.na(seen_exval) | is.na(seen_winner), TRUE, FALSE))]
 
 
-# Create graphs: sampling_switch_ratio vs seen_winner_chosen_proportion
+# Calculate proportion of seen_exval_chosen
+main_dt[, seen_exval_chosen_proportion := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio]
+main_dt[, seen_exval_chosen_proportion_1 := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio_1]
+main_dt[, seen_exval_chosen_proportion_2 := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio_2]
 
-ggplot(main_dt, aes(x = sampling_switch_ratio, y = seen_winner_chosen_proportion)) + geom_line() + geom_point() + geom_smooth()
 
-ggplot(segment_dt, aes(x = sampling_switch_ratio, y = seen_winner_chosen_proportion)) + geom_line() + geom_point() + geom_smooth()
+# Calculate proportion of seen_winner_chosen
+main_dt[, seen_winner_chosen_proportion := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio]
+main_dt[, seen_winner_chosen_proportion_1 := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio_1]
+main_dt[, seen_winner_chosen_proportion_2 := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio_2]
+
+# Calculate proportion of seen_exval_chosen_NA
+main_dt[, seen_exval_chosen_proportion_NA := round(sum(seen_exval_chosen_NA == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio]
+main_dt[, seen_exval_chosen_proportion_1_NA := round(sum(seen_exval_chosen_NA == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio_1]
+main_dt[, seen_exval_chosen_proportion_2_NA  := round(sum(seen_exval_chosen_NA == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio_2]
+
+
+# Calculate proportion of seen_winner_chosen_NA
+main_dt[, seen_winner_chosen_proportion_NA := round(sum(seen_winner_chosen_NA == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio]
+main_dt[, seen_winner_chosen_proportion_1_NA := round(sum(seen_winner_chosen_NA == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio_1]
+main_dt[, seen_winner_chosen_proportion_2_NA := round(sum(seen_winner_chosen_NA == TRUE, na.rm = TRUE) / .N ,3), by = sampling_switch_ratio_2]
 
               
 ```
 
-
-```{r}
-# decimal is 2
-
-# Round switching ratio to 2 decimal 
-main_dt[, sampling_switch_ratio:= round(sampling_switch_ratio, 2)]
-
-# create a subset of main where seen_exval is not equal to seen_winner
-segment_dt <- main_dt[seen_exval != seen_winner, ]
-
-# Calculate proportion of choices based switch ratio - seen_exval_chosen
-main_dt[, seen_exval_chosen_proportion := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N , 2), by = sampling_switch_ratio]
-segment_dt[, seen_exval_chosen_proportion := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N , 2), by = sampling_switch_ratio]
-
-# Calculate proportion of choices based switch ratio - seen_winner_chosen
-main_dt[, seen_winner_chosen_proportion := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N , 2), by = sampling_switch_ratio]
-segment_dt[, seen_winner_chosen_proportion := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N , 2), by = sampling_switch_ratio]
-
-# Create graphs: sampling_switch_ratio vs seen_exval_chosen_proportion
-
-ggplot(main_dt, aes(x = sampling_switch_ratio, y = seen_exval_chosen_proportion)) + geom_line() + geom_point() + geom_smooth()
-
-ggplot(segment_dt, aes(x = sampling_switch_ratio, y = seen_exval_chosen_proportion)) + geom_line() + geom_point() + geom_smooth()
-
-
-# Create graphs: sampling_switch_ratio vs seen_winner_chosen_proportion
-
-ggplot(main_dt, aes(x = sampling_switch_ratio, y = seen_winner_chosen_proportion)) + geom_line() + geom_point() + geom_smooth() 
-
-ggplot(segment_dt, aes(x = sampling_switch_ratio, y = seen_winner_chosen_proportion)) + geom_line() + geom_point() + geom_smooth() 
-
-# Create graphs: sampling_switch_ratio vs seen_winner_chosen_proportion
-
-ggplot(main_dt, aes(x = sampling_switch_ratio, y = seen_winner_chosen_proportion)) + geom_line() + geom_point() + geom_smooth() + facet_grid(dom ~ . )
-
-ggplot(segment_dt, aes(x = sampling_switch_ratio, y = seen_winner_chosen_proportion)) + geom_line() + geom_point() + geom_smooth() + facet_grid(dom ~ . )
-
-```
-
-## Logistic regression 
-
-Create training and test data 
+GRAPHS with all data 
+  - proportions that include NA will have higher average 
 ```{r}
 
-# Make choice numeric 
-main_dt[, choice := ifelse(choice == 'A', 0, 1)]
-segment_dt[, choice := ifelse(choice == 'A', 0, 1)]
+# Create graphs: sampling_switch_ratio vs seen_exval_chosen_proportion & seen_winner_chosen_proportion
 
+ggplot(main_dt ,aes(x = sampling_switch_ratio_2, y = seen_exval_chosen_proportion_2)) + geom_point() + facet_grid(dom ~ .) 
 
-# Make seen_exval numeric 
-main_dt[, seen_exval := ifelse(seen_exval == 'A', 0, 1)]
-segment_dt[, seen_exval := ifelse(seen_exval == 'A', 0, 1)]
+ggplot(main_dt, aes(x = sampling_switch_ratio_2, y = seen_exval_chosen_proportion_2_NA)) + geom_point() + facet_grid(dom ~ .) 
 
-# Make seen_winner numeric 
-main_dt[, seen_winner := ifelse(seen_winner == 'A', 0, 1)]
-segment_dt[, seen_winner := ifelse(seen_winner == 'A', 0, 1)]
+ggplot(main_dt, aes(x = sampling_switch_ratio_2, y = seen_winner_chosen_proportion_2)) + geom_point() + facet_grid(dom ~ .) 
 
-# Split the data into training and test set for main_dt
-# Use 80% of dataset as training set and remaining 30% as testing set
-set.seed(123)
-sample <- sample(c(TRUE, FALSE), nrow(main_dt), replace=TRUE, prob=c(0.8,0.2))
-train.main_dt <- main_dt[sample, ]
-test.main_dt <- main_dt[!sample, ]  
+ggplot(main_dt, aes(x = sampling_switch_ratio_2, y = seen_winner_chosen_proportion_2_NA)) + geom_point() + facet_grid(dom ~ .) 
 
-# Split the data into training and test set for segment_dt
-sample <- sample(c(TRUE, FALSE), nrow(segment_dt), replace=TRUE, prob=c(0.8,0.2))
-train.segment_dt <- segment_dt[sample, ]
-test.segment_dt <- segment_dt[!sample, ]  
-
-```
-
-Create model for main_dt
-
-```{r}
-
-# Fit the model
-
-log_model1 <- glm( choice ~ sampling_switch_ratio , data = train.main_dt, family = binomial)
-
-# Summarize the model
-summary(log_model1)
-
-# Make predictions
-probabilities <- log_model1 %>% predict(test.main_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.main_dt$choice, na.rm = TRUE)
-
-```
-
-
-
-Create model for segment_dt
-
-```{r}
-
-# Fit the model
-log_model1.seg<- glm( choice ~ sampling_switch_ratio , data = train.segment_dt, family = binomial)
-
-# Summarize the model
-summary(log_model1.seg)
-
-# Make predictions
-probabilities <- log_model1.seg %>% predict(test.segment_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.segment_dt$choice, na.rm = TRUE)
-
-```
-
-Create model for main_dt
-
-```{r}
-
-# Fit the model
-
-log_model2 <- glm( choice ~ sampling_switch_ratio + sampling_total, data = train.main_dt, family = binomial)
-
-# Summarize the model
-summary(log_model2)
-
-# Make predictions
-probabilities <- log_model2 %>% predict(test.main_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.main_dt$choice, na.rm = TRUE)
-
-```
-
-
-
-Create model for segment_dt
-
-```{r}
-
-# Fit the model
-log_model2.seg<- glm( choice ~ sampling_switch_ratio + sampling_total, data = train.segment_dt, family = binomial)
-
-# Summarize the model
-summary(log_model2.seg)
-
-# Make predictions
-probabilities <- log_model2.seg %>% predict(test.segment_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.segment_dt$choice, na.rm = TRUE)
 
 ```
 ```{r}
 
-# Fit the model
+adhoc <- main_dt[seen_exval_winner_same == FALSE, ]
 
-log_model3 <- glm( choice ~ sampling_switch_ratio + seen_exval, data = train.main_dt, family = binomial)
-
-# Summarize the model
-summary(log_model3)
-
-# Make predictions
-probabilities <- log_model3 %>% predict(test.main_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.main_dt$choice, na.rm = TRUE)
+adhoc[, seen_winner_chosen_proportion_wip := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), by = dom]
+adhoc[, seen_exval_chosen_proportion_wip := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N ,3), by = dom]
+adhoc[, .(mean(seen_winner_chosen_proportion_wip), mean(seen_exval_chosen_proportion_wip) ), by = dom]
 
 ```
 
+We see more significant different in domain than switch_ratio when it comes to domain. 
 
-
-Create model for segment_dt
-
+# Data is for modelling
 ```{r}
 
-# Fit the model
-log_model3.seg<- glm( choice ~ sampling_switch_ratio + seen_exval, data = train.segment_dt, family = binomial)
-
-# Summarize the model
-summary(log_model3.seg)
-
-# Make predictions
-probabilities <- log_model3.seg %>% predict(test.segment_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.segment_dt$choice, na.rm = TRUE)
+write.csv(main_dt, file = here("Data", "main_dt_model.csv"), row.names = FALSE)
 
 ```
-
-Create model for main_dt
-
-
-```{r}
-# Fit the model
-
-log_model4 <- glm( choice ~ sampling_switch_ratio + seen_winner, data = train.main_dt, family = binomial)
-
-# Summarize the model
-summary(log_model4)
-
-# Make predictions
-probabilities <- log_model4 %>% predict(test.main_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.main_dt$choice, na.rm = TRUE)
-
-```
-
-
-
-Create model for segment_dt
-
-```{r}
-
-# Fit the model
-log_model4.seg<- glm( choice ~ sampling_switch_ratio + seen_winner ,data = train.segment_dt, family = binomial)
-
-# Summarize the model
-summary(log_model4.seg)
-
-# Make predictions
-probabilities <- log_model4.seg %>% predict(test.segment_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.segment_dt$choice, na.rm = TRUE)
-
-```
-
-
-```{r}
-# Fit the model
-
-log_model5 <- glm( choice ~ sampling_switch_ratio + seen_winner + seen_exval, data = train.main_dt, family = binomial)
-
-# Summarize the model
-summary(log_model5)
-
-# Make predictions
-probabilities <- log_model5 %>% predict(test.main_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.main_dt$choice, na.rm = TRUE)
-
-```
-
-
-
-Create model for segment_dt
-
-```{r}
-
-# Fit the model
-log_model5.seg<- glm( choice ~ sampling_switch_ratio + seen_winner + seen_exval ,data = train.segment_dt, family = binomial)
-
-# Summarize the model
-summary(log_model5.seg)
-
-# Make predictions
-probabilities <- log_model5.seg %>% predict(test.segment_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.segment_dt$choice, na.rm = TRUE)
-
-```
-
-
-
-# Sampling clusters  
-
-
-We decided to look further into sampling variables and make some transformation 
-
-Let's look at all sampling related metrics and their histogram 
-
-
-```{r}
-
-sampling_temp <- main_dt[, c("sampling_total", "sampling_total_switch", "sampling_round_total",  "sampling_switch_ratio")]
-
-ggplot(sampling_temp, aes(x = sampling_total)) + geom_histogram(binwidth = 2, fill="black", col="grey") + 
-  labs(title = "Histogram of sampling_total_switch " ,
-       x = "Switching Total",
-       y = "Frequency")
-
-# --> right skewed
-
-ggplot(sampling_temp, aes(x = sampling_total_switch)) + geom_histogram(binwidth = 2, fill="black", col="grey") + 
-  labs(title = "Histogram of sampling_total_switch " ,
-       x = "sampling_total_switch",
-       y = "Frequency")
-
-# --> right skewed
-
-ggplot(sampling_temp, aes(x = sampling_round_total)) + geom_histogram(binwidth = 2, fill="black", col="grey") + 
-  labs(title = "Histogram of sampling_round_total " ,
-       x = "sampling_round_total",
-       y = "Frequency")
-
-# --> right skewed
-
-
-ggplot(sampling_temp, aes(x = sampling_switch_ratio)) + geom_histogram(binwidth = 0.1, fill="black", col="grey") + 
-  labs(title = "Histogram of sampling_switch_ratio " ,
-       x = "sampling_switch_ratio",
-       y = "Frequency")
-# --> bimodal 
-
-
-```
-
-We can use normalization (scale),  logartihmic transformation or Square root transformation for the right skewed ones 
-Also use nromal distribution check after the transformation
-
-
-```{r}
-
-# Apply normalization
-sampling_temp[, norm_sampling_total := scale(sampling_total)]
-sampling_temp[, norm_sampling_total_switch := scale(sampling_total_switch)]
-
-# histograms
-ggplot(sampling_temp, aes(norm_sampling_total)) + geom_histogram(binwidth = 0.5) + labs(x = "norm_sampling_total")
-ggplot(sampling_temp, aes(norm_sampling_total_switch)) + geom_histogram(binwidth = 0.5) + labs(x = "norm_sampling_total_switch")
-
-
-# normal distribution tests
-ks.test(sampling_temp$norm_sampling_total, "pnorm")
-ks.test(sampling_temp$norm_sampling_total_switch, "pnorm")
-
-
-# Apply logarithmic transformation
-sampling_temp[, log_sampling_total := log(sampling_total)]
-sampling_temp[, log_sampling_total_switch := log(sampling_total_switch)]
-
-#histograms 
-ggplot(sampling_temp, aes(log_sampling_total)) + geom_histogram(binwidth = 0.5) + labs(x = "log_sampling_total")
-ggplot(sampling_temp, aes(log_sampling_total_switch)) + geom_histogram(binwidth = 0.5) + labs(x = "log_sampling_total_switch")
-
-
-# normal distribution tests
-ks.test(sampling_temp$log_sampling_total, "pnorm")
-ks.test(sampling_temp$log_sampling_total_switch, "pnorm")
-
-# Apply square root transformation
-sampling_temp[, sr_sampling_total := sqrt(sampling_total)]
-sampling_temp[, sr_sampling_total_switch := sqrt(sampling_total_switch)]
-
-#histograms 
-ggplot(sampling_temp, aes(sr_sampling_total)) + geom_histogram(binwidth = 1) + labs(x = "sr_sampling_total")
-ggplot(sampling_temp, aes(sr_sampling_total_switch)) + geom_histogram(binwidth = 1) + labs(x = "sr_sampling_total_switch")
-
-# normal distribution tests
-ks.test(sampling_temp$sr_sampling_total, "pnorm")
-ks.test(sampling_temp$sr_sampling_total_switch, "pnorm")
-
-```
-
-
-```{r}
-# I will use similar simialr approaches for the ratios 
-# but they are bimodel!
-
-# I will try normalize, log, squared root transformation
-
-
-# Apply normalization
-sampling_temp[, norm_sampling_switch_ratio := scale(sampling_switch_ratio)]
-
-# histograms
-#ggplot(sampling_temp, aes(norm_sampling_ratio)) + geom_histogram(binwidth = 0.5) + labs(x = "norm_sampling_ratio")
-ggplot(sampling_temp, aes(norm_sampling_switch_ratio)) + geom_histogram(binwidth = 0.5) + labs(x = "norm_sampling_switch_ratio")
-
-# normal distribution tests
-ks.test(sampling_temp$norm_sampling_switch_ratio, "pnorm")
-
-# Apply logarithmic transformation
-sampling_temp[, log_sampling_switch_ratio := log(sampling_switch_ratio)]
-
-#histograms 
-ggplot(sampling_temp, aes(log_sampling_switch_ratio)) + geom_histogram(binwidth = 0.5) + labs(x = "log_sampling_switch_ratio")
-
-
-
-# normal distribution tests
-ks.test(sampling_temp$log_sampling_switch_ratio, "pnorm")
-
-
-# Apply square root transformation
-sampling_temp[, sr_sampling_switch_ratio := sqrt(sampling_switch_ratio)]
-
-#histograms 
-#ggplot(sampling_temp, aes(sr_sampling_ratio)) + geom_histogram(binwidth = 0.1) + labs(x = "sr_sampling_ratio")
-ggplot(sampling_temp, aes(sr_sampling_switch_ratio)) + geom_histogram(binwidth = 0.1) + labs(x = "sr_sampling_switch_ratio")
-
-
-# normal distribution tests
-ks.test(sampling_temp$sr_sampling_switch_ratio, "pnorm")
-
-
-```
-
-  - So I think the important metrics are switching ratio and sampling total for clustering
-  - if we think low, medium and high for both of them, we should be expecting 9 clusters 
-  - When we were calculating switching ratio, we decided to exclude first sampling but it caused 
-  48 of NA data. Just to prevent it, I created sampling_switch_ratio_2 
-  - I will create a sampling_real variable which is the sampling_total - sampling_total_switching to decrease the effect of sampling total 
-  - I will check histogram of sampling ratio, sampling total, sampling_real
-  - I will create a k-means cluster by using these 2 metrics with 9 clusters
-  - If it doesn't pass the visual evaluation, I will try to create 9 clusters myself
-
-
-```{r}
-
-main_dt[, sampling_real := (sampling_total - sampling_total_switch)]
-
-# create a graph sampling total vs sampling switch ratio 
-ggplot(main_dt, aes(x = sampling_switch_ratio , y = sampling_total)) + geom_point()
-ggplot(main_dt, aes(x = sampling_total_switch , y = sampling_real)) + geom_point()
-
-```
-
-```{r}
-# Create histograms of sampling_total, sampling_real, sampling_switch_ratio
-hist(main_dt$sampling_real)
-hist(main_dt$sampling_total)
-hist(main_dt$sampling_total_switch)
-hist(main_dt$sampling_switch_ratio)
-
-# let's use log transformation for the first two and scale for the last one. 
-
-
-```
-
-
-
-```{r}
-# Sampling model 
-
-model_dt<- as.data.table(main_dt[sampling_total_switch != 0, c("identifier","sampling_total", "sampling_total_switch", "sampling_real", "sampling_switch_ratio")])
-
-
-# Apply logarithmic transformation
-model_dt[, log_sampling_total_switch := log(sampling_total_switch)]
-model_dt[, log_sampling_real := log(sampling_real)]
-
-
-model_dt[, scale_sampling_total_switch := scale(sampling_total_switch)]
-model_dt[, scale_sampling_real := scale(sampling_real)]
-
-# Perform k-means clustering 
-k <- 9
-model_result <- kmeans(model_dt[, c("log_sampling_real", "log_sampling_total_switch")], centers = k, nstart = 10)
-
-# Add the cluster assignments as a new column in the data table
-model_dt$cluster <- as.factor(model_result$cluster)
-
-# plots
-ggplot(model_dt, aes(sampling_real, sampling_total_switch, color = cluster)) + geom_point()
-
-ggplot(model_dt, aes(log_sampling_real, log_sampling_total_switch, color = cluster)) + geom_point()
-
-ggplot(model_dt, aes(sampling_switch_ratio, sampling_total, color = cluster)) + geom_point()
-
-
-```
-
-```{r}
-# scree plot 
-# Initialize total within sum of squares error: wss
-wss <- 0
-
-# For 1 to 15 cluster centers
-for (i in 1:15) {
-  km.out <- kmeans(model_dt[, c("log_sampling_real", "log_sampling_total_switch")], centers = i)
-  # Save total within sum of squares to wss variable
-  wss[i] <- km.out$tot.withinss
-
-}
-
-# Plot total within sum of squares vs. number of clusters
-plot(1:15, wss, type = "b", 
-     xlab = "Number of Clusters", 
-     ylab = "Within groups sum of squares")
-
-```
-
-## Sampling clusters vs. choice proportions
-
-```{r}
-# add cluster to main_dt and segment_dt
-main_dt <- main_dt %>% left_join (model_dt, by = 'identifier')
-segment_dt <- segment_dt %>% left_join(model_dt, by = 'identifier')
-
-# Create graphs: sampling_switch_ratio vs seen_exval_chosen_proportion
-
-ggplot(main_dt, aes(x = cluster, y = seen_exval_chosen_proportion)) + geom_line() + geom_point()
-
-ggplot(segment_dt, aes(x = cluster, y = seen_exval_chosen_proportion)) + geom_line() + geom_point()
-
-
-# Create graphs: sampling_switch_ratio vs seen_winner_chosen_proportion
-
-ggplot(main_dt, aes(x = cluster , y = seen_winner_chosen_proportion)) + geom_line() + geom_point() + geom_smooth() + facet_grid(dom ~ . )
-
-ggplot(segment_dt, aes(x = cluster, y = seen_winner_chosen_proportion)) + geom_line() + geom_point() + geom_smooth() + facet_grid(dom ~ . )
-
-
-```
-
 
 
 
