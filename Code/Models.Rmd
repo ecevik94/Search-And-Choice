@@ -33,172 +33,270 @@ library(lme4)
 Read main data 
 ```{r, warning = FALSE, echo = TRUE}
 #read the file 
-model_dt <- as.data.table(read.csv(here("Data", "main_dt_model.csv")))
-colnames(model_dt)
+main_dt <- as.data.table(read.csv(here("Data", "main_dt_model.csv")))
+colnames(main_dt)
 ```
 
-# Logistic regression 
+Create column called exval_chosen for descriptive result
+```{r}
+
+main_dt[, exval_chosen:= ifelse(choice == exval, 1, 0 )]
+main_dt[, exval_seen_real_same:= ifelse(exval == seen_exval, 1, 0 )]
+
+```
+
+
+
+Filter the data and separate different data tables based on domain
+
+```{r, warning = FALSE, echo = TRUE}
+
+# Filter data 
+# We decided to eliminate the cases where the participant didn't sample from one of the option. 
+
+model_all_dt <- main_dt[seen_A != 0 & seen_B != 0, ]
+
+# Also exclude the cases winner or exval is not classified
+model_all_dt <- model_all_dt[seen_exval_winner_same != "special", ]
+
+# For seen_exval_chosen and seen_winner_chosen, I also created columns include _NA as a suffix
+# They included cases like evA == evB and classified them as seen_exval 
+
+model_all_dt[, seen_exval_chosen_NA := NULL]
+model_all_dt[, seen_winner_chosen_NA := NULL]
+model_all_dt[, seen_exval_winner_same_NA := NULL]
+model_all_dt[, seen_exval_chosen_proportion_NA := NULL]
+model_all_dt[, seen_exval_chosen_proportion_1_NA := NULL]
+model_all_dt[, seen_exval_chosen_proportion_2_NA := NULL]
+model_all_dt[, seen_winner_chosen_proportion_NA := NULL]
+model_all_dt[, seen_winner_chosen_proportion_1_NA := NULL]
+model_all_dt[, seen_winner_chosen_proportion_2_NA := NULL]
+
+
+# Create data tabels based on dom 
+
+gain_dt <- model_all_dt[dom == "Gain", ]
+loss_dt <- model_all_dt[dom == "Loss", ]
+mixed_dt <- model_all_dt[dom == "Mixed", ]
+
+
+```
+
+
+# Logistic regression models
 
 Create training and test data 
 ```{r}
 
 # Make choice numeric 
-model_dt[, choice := ifelse(choice == "A", 0, 1)]
+gain_dt[, choice := ifelse(choice == "A", 0, 1)]
 
 # Make seen_exval numeric 
-model_dt[, seen_exval := ifelse(seen_exval == "A", 0, 1)]
+gain_dt[, seen_exval := ifelse(seen_exval == "A", 0, 1)]
+
+# Make seen_exval_chosen numeric 
+gain_dt[, seen_exval_chosen := ifelse(seen_exval_chosen == TRUE, 1, 0)]
 
 # Make seen_winner numeric 
-model_dt[, seen_winner := ifelse(seen_winner == "A", 0, 1)]
+gain_dt[, seen_winner := ifelse(seen_winner == "A", 0, 1)]
 
-# Make dom numeric 
-model_dt[, dom := ifelse(dom == "Gain", 0, ifelse(dom == "Loss", 1, 2))]
+# Make seen_winner_chosen numeric 
+gain_dt[, seen_winner_chosen := ifelse(seen_winner_chosen == TRUE, 1, 0)]
+
+# Make seen_exval_winner_same numeric 
+gain_dt[, seen_exval_winner_same := ifelse(seen_exval_winner_same == FALSE, 0, 1)]
 
 # Create a paper column 
-model_dt[, paper:= substr(identifier, 1, 3)  ]
+gain_dt[, paper:= substr(identifier, 1, 3)  ]
 
 # Split the data into training and test set for model_dt
 # Use 80% of dataset as training set and remaining 30% as testing set
-set.seed(123)
-sample <- sample(c(TRUE, FALSE), nrow(model_dt), replace=TRUE, prob=c(0.8,0.2))
-train.model_dt <- model_dt[sample, ]
-test.model_dt <- model_dt[!sample, ]  
+#set.seed(123)
+#sample <- sample(c(TRUE, FALSE), nrow(gain_dt), replace=TRUE, prob=c(0.8,0.2))
+#train.gain_dt <- gain_dt[sample, ]
+#test.gain_dt <- gain_dt[!sample, ]  
 
 
 ```
 
-## Model with sampling_switch_ratio
+## Model1: DV: seen_exval_chosen, IV: sampling_switch_ratio
 
 ```{r}
 
+# LINUS, model m1 
+
 # Fit the model
 
-log_model1 <- glm( choice ~ sampling_switch_ratio , data = train.model_dt, family = binomial)
+log_model1 <- glm( seen_exval_chosen ~ sampling_switch_ratio , data = gain_dt, family = binomial)
 
-# Summarize the model
-summary(log_model1)
-
-# Make predictions
-probabilities <- log_model1 %>% predict(test.model_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
+ # Summarize the model
+ summary(log_model1)
+# 
+# # Make predictions
+# probabilities <- log_model1 %>% predict(test.gain_dt, type = "response")
+# predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+# 
+# # Model accuracy
+# mean(predicted.classes == test.gain_dt$seen_exval_chosen, na.rm = TRUE)
 
 ```
+RESULT: When sampling switch ratio is increasing, the odds of seen_exval_chosen is increasing
 
 
-## Model with sampling_switch_ratio and sampling_total
+
+
+## Model4: DV: seen_exval_chosen, IV: sampling_switch_ratio + seen_exval_winner_same 
 
 ```{r}
+# LINUS model m2
 
 # Fit the model
 
-log_model2 <- glm( choice ~ sampling_switch_ratio + sampling_total, data = train.model_dt, family = binomial)
+log_model5 <- glm( seen_exval_chosen ~ sampling_switch_ratio + seen_exval_winner_same , data = gain_dt, family = binomial)
 
-# Summarize the model
-summary(log_model2)
-
-# Make predictions
-probabilities <- log_model2 %>% predict(test.model_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
-
-```
-
-## Model with sampling_switch_ratio and seen_winner 
-
-```{r}
-# Fit the model
-
-log_model3 <- glm( choice ~ sampling_switch_ratio + seen_winner, data = train.model_dt, family = binomial)
-
-# Summarize the model
-summary(log_model3)
-
-# Make predictions
-probabilities <- log_model3 %>% predict(test.model_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
-
-```
-
-## Model with sampling_switch_ratio and seen_winner and seen_exval
-
-```{r}
-# Fit the model
-
-log_model4 <- glm( choice ~ sampling_switch_ratio + seen_winner + seen_exval, data = train.model_dt, family = binomial)
-
-# Summarize the model
-summary(log_model4)
-
-# Make predictions
-probabilities <- log_model4 %>% predict(test.model_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
-
-```
-
-## Model with sampling_switch_ratio and seen_winner and dom
-
-```{r}
-# Fit the model
-
-log_model5 <- glm( choice ~ sampling_switch_ratio + seen_winner + dom, data = train.model_dt, family = binomial)
 
 # Summarize the model
 summary(log_model5)
 
-# Make predictions
-probabilities <- log_model5 %>% predict(test.model_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
 
-# Model accuracy
-mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
+# # Make predictions
+# probabilities <- log_model5 %>% predict(test.gain_dt, type = "response")
+# predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+# 
+# # Model accuracy
+# mean(predicted.classes == test.gain_dt$seen_exval_chosen, na.rm = TRUE)
 
 ```
 
 
-# HIERARCHICAL MODELS
+## Model6: DV: seen_exval_chosen, IV: sampling_switch_ratio + seen_exval_winner_same + sampling_switch_ratio * seen_exval_winner_same
 
-## Model with fixed: sampling_switch_ratio and random: paper
+```{r}
+# LINUS model m3
+
+# Fit the model
+log_model6 <- glm( seen_exval_chosen ~ sampling_switch_ratio + seen_exval_winner_same + sampling_switch_ratio * seen_exval_winner_same  , data = gain_dt, family = binomial)
+
+
+# Summarize the model
+summary(log_model6)
+
+
+# # Make predictions
+# probabilities <- log_model6 %>% predict(test.gain_dt, type = "response")
+# predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+# 
+# # Model accuracy
+# mean(predicted.classes == test.gain_dt$seen_exval_chosen, na.rm = TRUE)
+
+```
+```{r, warning = FALSE}
+
+library(stargazer)
+
+stargazer(log_model1, log_model5 , log_model6, title = "Model Comparison - same with Linus", type = "text")
+
+
+```
 
 ```{r}
 
-h_model1 <- glmer(choice ~ sampling_switch_ratio + (1 | paper), data = train.model_dt, family = binomial)
 
-# Summarize the model
-summary(h_model1)
-
-# Make predictions using the fitted model
-probabilities <- predict(h_model1, newdata = test.model_dt, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-
-# Model accuracy
-accuracy <- mean(predicted.classes == test.model_dt$choice, na.rm = TRUE)
-print(paste("Accuracy:", accuracy))
 
 ```
 
-## Model with fixed: sampling_switch_ratio and random: participant
+
+
+```{r}
+# multilevel model
+m4 <- glmer(seen_exval_chosen ~ sampling_switch_ratio * seen_exval_winner_same + (1|participant), # we should add a random effect for the papers
+            data = gain_dt,  family = binomial)
+summary(m4)
+
+```
+
+
+# Bayesian implementation
+```{r}
+#library(brms)
+m4B <- brm(seen_exval_chosen ~ 1 + sampling_switch_ratio * seen_exval_winner_same  + (1|participant) ,
+           family = bernoulli() , 
+           data = gain_dt , 
+           warmup = 1000, iter = 2000 , 
+           cores = 8 , 
+           chains = 8 , 
+           seed = 6151) 
+summary(m4B)
+plot(m4B)
+```
+
+```{r}
+## predictive accuracy
+pp_check(m4B, type = "bars") # posterior predictive check --> Take your regression and data for the independent variables and predict the dependent variable and check the outcome. 
+
+loo(m4B) # leave one out cross validation
+```
+
+
+
+
+## Model2: DV: exval_chosen, IV: sampling_switch_ratio
 
 ```{r}
 
-h_model2 <- glmer(choice ~ sampling_switch_ratio + (1 | participant), data = train.model_dt, family = binomial)
+# Fit the model
+log_model2 <- glm( exval_chosen ~ sampling_switch_ratio, data = train.gain_dt, family = binomial)
 
 # Summarize the model
-summary(h_model2)
+summary(log_model2)
 
-# test ve trainde ayni participantlar bulunmasi lazim
-
+# # Make predictions
+# probabilities <- log_model2 %>% predict(test.gain_dt, type = "response")
+# predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+# 
+# # Model accuracy
+# mean(predicted.classes == test.gain_dt$exval_chosen, na.rm = TRUE)
 
 ```
 
-## Model with fixed: sampling_switch_ratio and random: participant & paper
+## Model3: DV: seen_exval_chosen, IV: sampling_switch_ratio + exval_seen_real_same
+
+```{r}
+
+# Fit the model
+log_model3 <- glm( seen_exval_chosen ~ sampling_switch_ratio + exval_seen_real_same , data = gain_dt, family = binomial)
+
+
+# Summarize the model
+summary(log_model3)
+
+
+# # Make predictions
+# probabilities <- log_model3 %>% predict(test.gain_dt, type = "response")
+# predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+# 
+# # Model accuracy
+# mean(predicted.classes == test.gain_dt$seen_exval_chosen, na.rm = TRUE)
+
+```
+
+## Model4: DV: seen_exval_chosen, IV: sampling_switch_ratio + exval_seen_real_same + sampling_switch_ratio*exval_seen_real_same
+
+```{r}
+
+# Fit the model
+log_model4 <- glm( seen_exval_chosen ~ sampling_switch_ratio + exval_seen_real_same + sampling_switch_ratio*exval_seen_real_same, data = train.gain_dt, family = binomial)
+
+
+# Summarize the model
+summary(log_model4)
+
+
+# # Make predictions
+# probabilities <- log_model4 %>% predict(test.gain_dt, type = "response")
+# predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
+# 
+# # Model accuracy
+# mean(predicted.classes == test.gain_dt$seen_exval_chosen, na.rm = TRUE)
+
+```
