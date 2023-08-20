@@ -409,8 +409,6 @@ cleaned_exp[, sampling_switch_ratio := round(sampling_total_switch/(sampling_tot
 
 ```{r, echo = TRUE}
 
-temp <- cleaned_exp[, c("identifier", "trial", "option", "sampling_switch")]
-
 
 # Initialize "number of yes" to 0 for each identifier
 temp[, number_of_yes := 0, by = identifier]
@@ -447,104 +445,227 @@ for (i in 1:nrow(temp)) {
 }
 
 cleaned_exp[, sampling_round := temp$round]
+
+cleaned_exp[, round := temp$round]
 ```
 
-# Precise definition for winner 
+# Precise definition for round winner 
+round means uninterrepted sequence of options. Based on thi definition, some rounds might be uncompleted. 
+
+# Seen_winner vs piecewise winner 
 ```{r}
 
 # 1- create column called round completed
+# we will use this column to create a different cases --> robust analysis 
+cleaned_exp[, round_completed := ifelse(uniqueN(option) == 2, TRUE, FALSE), by = c("identifier", "round")]
 
-cleaned_exp[, round_completed := ifelse(uniqueN(option) == 2, TRUE, FALSE), by = c("identifier", "sampling_round")]
 
-# 2- create a column called round winner 
-# it will show the winner of the completed round 
+```
 
-# seen_A
+# 2 - round winner: higher mean valued option over a round 
+
+We will use seen_exval logic 
+  1- round_seen_A & round_seen_B
+  2- round_seen_A1 & round_seen_B1
+  3- round_seen_A2 & round_seen_B2
+  4- round_seen_probA1 & round_seen_probB1
+  5- round_seen_probA2 & round_seen_probB2
+  6- round_seen_evA & round_seen_evB
+  7- round_winner 
+  8- piecewise_winner 
+  
+```{r}
+
+# round_seen_A
 # count option A in a the run 
-cleaned_exp <- cleaned_exp %>%  group_by(identifier, sampling_round) %>% 
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
   mutate(round_seen_A = sum(option == "A")) %>% 
   ungroup()
 
 
-# seen_B
+# round_seen_B
 # count option A in a the run 
-cleaned_exp <- cleaned_exp %>%  group_by(identifier, sampling_round) %>% 
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
   mutate(round_seen_B = sum(option == "B")) %>% 
   ungroup()
 
 
 
-# seen_A1 (how many time that the participant saw outcome A1 in the run)
-cleaned_exp <- cleaned_exp %>%  group_by(identifier, sampling_round) %>% 
+# round_seen_A1 (how many time that the participant saw outcome A1 in the run)
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
   mutate(round_seen_A1 = sum(seen_outcome == "A1")) %>% 
   ungroup()
 
 
-# seen_A2 (how many time that the participant saw outcome A2 in the run)
-cleaned_exp <- cleaned_exp %>%  group_by(identifier, sampling_round) %>% 
+# round_seen_A2 (how many time that the participant saw outcome A2 in the run)
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
   mutate(round_seen_A2 = sum(seen_outcome == "A2")) %>% 
   ungroup()
 
 
-# seen_B1 (how many time that the participant saw outcome A1 in the run)
-cleaned_exp <- cleaned_exp %>%  group_by(identifier, sampling_round) %>% 
+# round_seen_B1 (how many time that the participant saw outcome A1 in the run)
+cleaned_exp <- cleaned_exp %>%  group_by(identifier) %>% 
   mutate(round_seen_B1 = sum(seen_outcome == "B1")) %>% 
   ungroup()
 
 
-# seen_B2 (how many time that the participant saw outcome A2 in the run)
-cleaned_exp <- cleaned_exp %>%  group_by(identifier, sampling_round) %>% 
+# round_seen_B2 (how many time that the participant saw outcome A2 in the run)
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
   mutate(round_seen_B2 = sum(seen_outcome == "B2")) %>% 
   ungroup()
 
 
-# seen_probA1 = seen_A1/seen_A
+# round_seen_probA1 = round_seen_A1/round_seen_A
 cleaned_exp <- as.data.table(cleaned_exp)
 cleaned_exp[, round_seen_probA1 := round(round_seen_A1 / round_seen_A, 3)]
 
 
-# seen_probA2 = seen_A2/seen_A
+# round_seen_probA2 = round_seen_A2/round_seen_A
 cleaned_exp[, round_seen_probA2 := round(round_seen_A2 / round_seen_A, 3)]
 
 
-# seen_probB1 = seen_B1/seen_B
+# round_seen_probB1 = round_seen_B1/round_seen_B
 cleaned_exp[, round_seen_probB1 := round(round_seen_B1 / round_seen_B, 3)]
 
 
-# seen_probB2 = seen_B2/seen_B
+# round_seen_probB2 = round_seen_B2/round_seen_B
 cleaned_exp[, round_seen_probB2 := round(round_seen_B2 / round_seen_B, 3)]
 
 
-# time to find round winner 
-
-cleaned_exp <- cleaned_exp %>% mutate(round_seen_outcomeA_higher_prob := case_when 
-                                      (round_seen_probA1 > round_seen_probA2 ~ outA1,
-                                       round_seen_probA1 < round_seen_probA2 ~ outA2))
-
-cleaned_exp <- cleaned_exp %>% mutate(round_seen_optionA_higher_prob := case_when 
-                                      ( round_seen_probA1 > round_seen_probA2 ~ 'A1',
-                                        round_seen_probA1 < round_seen_probA2 ~ 'A2'))
-
-cleaned_exp <- cleaned_exp %>% mutate(round_seen_outcomeB_higher_prob := case_when 
-                                      ( round_seen_probB1 > round_seen_probB2 ~ outB1,
-                                        round_seen_probB1 < round_seen_probB2 ~ outB2))
-
-cleaned_exp <- cleaned_exp %>% mutate(round_seen_optionB_higher_prob := case_when 
-                                      ( round_seen_probB1 > round_seen_probB2 ~ 'B1',
-                                        round_seen_probB1 < round_seen_probB2 ~ 'B2'))
-
-cleaned_exp[, round_seen_winner := ifelse( round_seen_outcomeA_higher_prob > round_seen_outcomeB_higher_prob, "A", "B") ]
+# round_seen_evA = outA1*round_seen_probA1 + outA2*round_seen_probA2
+cleaned_exp[, round_seen_evA := round(outA1*round_seen_probA1 + outA2*round_seen_probA2, 3)]
 
 
-# round_winner_A
-cleaned_exp <- as.data.table(cleaned_exp)
-
-cleaned_exp[, round_winner_A := sum(round_seen_winner == "A"), by = c("identifier")]
-
-# round_winner_B
+# round_seen_evB = outB1*round_seen_probB1 + outB2*round_seen_probB2
+cleaned_exp[, round_seen_evB := round(outB1*round_seen_probB1 + outB2*round_seen_probB2, 3)]
 
 
 ```
+
+
+# Round winner 
+When round is *completed*
+  - round_seen_evA > round_seen_evB --> round_winner : A
+  - round_seen_evB > round_seen_evA --> round_winner : B
+  - round_seen_evA = round_seen_evA --> round_winner : no winner 
+
+When round is *uncomplete* 
+  - round_winner : undefined 
+  
+  
+```{r}
+
+cleaned_exp[, round_winner := ifelse( round_completed == FALSE, "undefined", 
+                                      ifelse(round_seen_evA > round_seen_evB, "A", 
+                                             ifelse(round_seen_evA < round_seen_evB, "B", 
+                                                    "no winner")))]
+```
+
+
+
+# Roundwise winner 
+
+Definition
+Based on only "completed" rounds, compare the number of times A and B 
+were winners 
+  - round_winner_A : how many times A was the round winner 
+  - round_winner_B : how many times B was the round winner 
+  
+roundwise_winner 
+  - round_winner_A > round_winner_B --> roundwise_winner : A 
+  - round_winner_B > round_winner_A --> roundwise_winner : B   
+  - round_winner_A = round_winner_B --> roundwise_winner : no winner  
+
+
+```{r}
+
+# round_winner_A 
+# i will use same logic that I used for round calculation 
+
+
+# Initialize round_winner_A and round_winner_B for each identifier
+temp2$round_winner_A <- 0
+temp2$round_winner_B <- 0
+
+
+for(i in 1:nrow (temp2)) {
+  if (i == 1)
+  {
+    total_A <- 0
+    total_B <- 0
+    
+    if(temp2$round_winner[i] == "A") {
+      total_A <- total_A + 1 
+      temp2$round_winner_A[i] <- total_A
+      temp2$round_winner_B[i] <- total_B
+      
+    } else if (temp2$round_winner[i] == "B") {
+      total_B <- total_B + 1 
+      temp2$round_winner_A[i] <- total_A
+      temp2$round_winner_B[i] <- total_B
+      
+    } else {
+      temp2$round_winner_A[i] <- total_A
+      temp2$round_winner_B[i] <- total_B
+    }
+  } else {
+    
+    # check if we are still looking at the same identifier 
+    if(temp2$identifier[i] == temp2$identifier[i-1]) {
+      
+      # check if we are still looking at the same round 
+      if(temp2$round[i] == temp2$round[i-1]) {
+        temp2$round_winner_A[i] <- temp2$round_winner_A[i-1]
+        temp2$round_winner_B[i] <- temp2$round_winner_B[i-1]     
+      } else {
+      if(temp2$round_winner[i] == "A") {
+        total_A <- total_A + 1 
+      } else if (temp2$round_winner[i] == "B") {
+        total_B <- total_B + 1 
+      } else {
+        total_A <- total_A + 0
+        total_B <- total_B + 0
+      }
+        temp2$round_winner_A[i] <- total_A
+        temp2$round_winner_B[i] <- total_B
+    }
+    } else {
+      total_A <- 0
+      total_B <- 0 
+      
+      if (temp2$round_winner[i] == "A") {
+        total_A <- total_A + 1 
+      } else if (temp2$round_winner[i] == "B") {
+        total_B <- total_B + 1 
+      } else {
+        total_A <- total_A + 0
+        total_B <- total_B + 0
+      }
+      
+      temp2$round_winner_A[i] <- total_A
+      temp2$round_winner_B[i] <- total_B
+  }
+  }
+}
+  
+
+
+```
+
+# Roundwise winner 
+
+```{r}
+
+temp2 <- as.data.table(temp2)
+
+temp2[, roundwise_winner := ifelse(max(round_winner_A) == max(round_winner_B), "no winner",
+                                                    ifelse(max(round_winner_A) > max(round_winner_B), "A", "B")),
+                     by = identifier]
+
+```
+
+
+
 
 
 
