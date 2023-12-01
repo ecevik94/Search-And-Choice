@@ -1,0 +1,686 @@
+---
+title: "Data_Processing_Final"
+author: "Emine Cevik"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r}
+here::i_am("Code/Data_Processing_Final.Rmd")
+```
+
+```{r setup, include = TRUE, echo = FALSE}
+knitr::opts_chunk$set(message = FALSE)
+```
+
+```{r packages, warning = FALSE, echo = TRUE}
+library(tidyverse)
+library(data.table)
+library(fpCompare)
+library(openxlsx)
+library(here)
+library(agrmt)
+options(scipen = 999)
+```
+
+
+# Basics
+
+  - Read exp.txt file and create a data table 
+
+```{r raw data loading, echo = TRUE}
+exp_df <- read.table(here("Data", "exp.txt"))
+exp_dt <- as.data.table(exp_df)
+
+```
+
+## Filtering
+
+  - Time to filter the raw data 
+
+  - As a first step, choose the entries with cert = TRUE and type = free
+  --> free sampling paradigm where participants decide how much to sample and how to sample 
+  --> Whether (at least) on of the options is a sure event
+
+  - Secondly, eliminate the columns that we are not going to use 
+  
+    - outA3, outA4, outA5, outB3, outB4, outB5
+    - probA3, probA4, probA5, probB3, probB4, probB5
+    
+```{r filter raw data, warning = FALSE, echo = TRUE}
+
+filtered_exp <- exp_dt %>% filter(cert == TRUE, type =='free' )
+
+filtered_exp[, c("outA3", "outA4", "outA5", "outB3", "outB4", "outB5", "probA3",
+                 "probA4", "probA5", "probB3", "probB4", "probB5") := NULL]
+
+```   
+
+## Create identity attributions like participant
+
+```{r new variables, echo = TRUE}
+
+#identifier --> shows each decision experiment 
+filtered_exp <- filtered_exp %>% 
+  unite("identifier", c('id', 'subject', 'problem'), sep = "-", remove = FALSE)
+
+
+#participant --> shows each decision maker 
+filtered_exp <- filtered_exp %>% 
+  unite("participant", c('id', 'subject'), sep = "-", remove = FALSE)
+
+
+# study --> shows each different study 
+filtered_exp <- as.data.table(filtered_exp)
+filtered_exp[, study := substr(id, 1, 3) ]
+
+```
+
+
+
+## The descriptives of the data set 
+
+```{r descriptives of the data set, echo = TRUE}
+
+# Number of decisions made
+filtered_exp[, uniqueN(identifier), by = dom]
+
+# Number of participants 
+filtered_exp[, uniqueN(participant), by = dom]
+
+# Number of studies 
+filtered_exp[, uniqueN(study), by = dom]
+
+# Number of decisions made by  domains
+#filtered_exp[, uniqueN(identifier), by = dom]
+
+```
+
+# Data processing
+
+## Making data ready for analysis 
+  - These changes are applied to implement the analysis easier 
+  - When "choice" is equal to 0 --> A, 1 --> B
+  - When "option" is equal to 0 --> A, 1 --> B
+  - When "exval" is equal to 0 --> A, 1 --> B (also has NA)
+  - When "und" is equal to 0 --> A, 1 --> B
+  - When "cpt" is equal to 0 --> A, 1 --> B
+  - When "risky" is equal to 0 --> A, 1 --> B (also has NA)
+  - ev0 --> evA
+  - ev1 --> evB
+  
+  Note: during our analysis, some of these changes are reversed
+
+```{r data processing, warning = FALSE, echo = TRUE}
+
+cleaned_exp <- as.data.table(filtered_exp)
+
+cleaned_exp <- cleaned_exp %>% 
+  mutate(choice = ifelse( choice == 0, 'A', 'B'))
+
+cleaned_exp <- cleaned_exp %>% 
+  mutate(option = ifelse( option == 0, 'A', 'B'))
+
+cleaned_exp <- cleaned_exp %>% 
+  mutate(und = ifelse( und == 0, 'A', 'B'))
+
+cleaned_exp <- cleaned_exp %>% 
+  mutate(cpt = ifelse( cpt == 0, 'A', 'B'))
+
+cleaned_exp <- cleaned_exp %>% 
+  mutate(exval = ifelse(exval == 0, "A", 
+                        ifelse(exval == 1, "B", exval)))
+
+cleaned_exp <- cleaned_exp %>% 
+  mutate(risky = ifelse(risky == 0, "A", 
+                        ifelse(risky == 1, "B", risky)))
+
+
+# since values can be either A or B, created factor 
+cleaned_exp$choice <- as.factor(cleaned_exp$choice)
+cleaned_exp$option <- as.factor(cleaned_exp$option)
+cleaned_exp$und <- as.factor(cleaned_exp$und)
+cleaned_exp$cpt <- as.factor(cleaned_exp$cpt)
+cleaned_exp$exval <- as.factor(cleaned_exp$exval)
+cleaned_exp$risky <- as.factor(cleaned_exp$risky)
+
+# rename ev0 and ev1 
+cleaned_exp <- cleaned_exp %>% rename ("evA" = "ev0", 
+                                       "evB" = "ev1")
+
+```
+
+## Observed properties 
+
+  - seen_outcome (A1, A2, B1, B2): which outcome the participant saw at a trial
+  - seen_option (same as option): : which option (A-B) the participant saw at a trial
+  - seen_nout : number of distinct seen_outcome that the participant saw 
+  - seen_all (boolean): shows if the participant saw all possible outcomes 
+  - seen_A : how many time that the participant saw option A in the run
+  - seen_B : how many time that the participant saw option B in the run
+  - seen_A1 : how many time that the participant saw outcome A1 in the run
+  - seen_A2 : how many time that the participant saw outcome A2 in the run
+  - seen_B1 : how many time that the participant saw outcome B1 in the run
+  - seen_B2 : how many time that the participant saw outcome B2 in the run
+  - seen_probA1 = seen_A1 / seen_A
+  - seen_probA2 = seen_A2 / seen_A
+  - seen_probB1 = seen_B1 / seen_B
+  - seen_probB2 = seen_B2 / seen_B
+  - seen_evA = seen_probA1 * outA1 + seen_probA2 * outA2
+  - seen_evB = seen_probB1 * outB1 + seen_probB2 * outB2
+  - seen_covA = seen_stdA / seen_meanA
+    - seen_meanA : for each trial, the average of the outcomes when 
+    the seen_option is equal to A 
+    - seen_stdA : for each trial, the standard deviation of the outcomes 
+    when the seen_option is equal to B 
+  - seen_covB = seen_stdB / seen_meanB
+    - seen_meanB : for each trial, the average of the outcomes when 
+    the seen_option is equal to A 
+    - seen_stdB : for each trial, the sta
+  - seen_risky 
+  
+
+```{r observed properties , echo = TRUE}
+
+# seen_outcome
+# note: it is important to use option condition because outcomes could be same in option A and B
+cleaned_exp <- cleaned_exp %>% mutate(seen_outcome = case_when 
+                                      ( option == 'A' & outcome == outA1 ~ 'A1',
+                                        option == 'A' & outcome == outA2 ~ 'A2',
+                                        option == 'B' & outcome == outB1 ~ 'B1',
+                                        option == 'B' & outcome == outB2 ~ 'B2'))
+
+
+# seen_option : even though it is exactly same with option column, I want to have it 
+# for sanitary check later on
+cleaned_exp <- cleaned_exp %>% mutate(seen_option = option)
+
+
+# seen_nout : number of distinct seen_outcome that the participant saw 
+cleaned_exp <- cleaned_exp %>% 
+  group_by(identifier) %>% 
+  mutate(seen_nout = n_distinct(seen_outcome))
+
+
+# seen_all : number of distinct seen_outcome that the participant saw 
+
+cleaned_exp <- as.data.table(cleaned_exp)
+cleaned_exp[, seen_all := ifelse(nout == seen_nout, TRUE, ifelse(nout > seen_nout, FALSE, NA))]
+
+
+# seen_A : how many time that the participant saw option A in the run
+cleaned_exp <- cleaned_exp %>%  group_by(identifier) %>% 
+  mutate(seen_A = sum(option == "A")) %>% 
+  ungroup()
+
+
+# seen_B : how many time that the participant saw option B in the run
+cleaned_exp <- cleaned_exp %>%  group_by(identifier) %>% 
+  mutate(seen_B = sum(option == "B")) %>% 
+  ungroup()
+
+# seen_A1 : how many time that the participant saw outcome A1 in the run
+cleaned_exp <- cleaned_exp %>%  group_by(identifier) %>% 
+  mutate(seen_A1 = sum(seen_outcome == "A1")) %>% 
+  ungroup()
+
+
+# seen_A2 : how many time that the participant saw outcome A2 in the run
+cleaned_exp <- cleaned_exp %>%  group_by(identifier) %>% 
+  mutate(seen_A2 = sum(seen_outcome == "A2")) %>% 
+  ungroup()
+
+
+# seen_B1 : how many time that the participant saw outcome B1 in the run
+cleaned_exp <- cleaned_exp %>%  group_by(identifier) %>% 
+  mutate(seen_B1 = sum(seen_outcome == "B1")) %>% 
+  ungroup()
+
+
+# seen_B2 : how many time that the participant saw outcome B2 in the run
+cleaned_exp <- cleaned_exp %>%  group_by(identifier) %>% 
+  mutate(seen_B2 = sum(seen_outcome == "B2")) %>% 
+  ungroup()
+
+
+# seen_probA1 = seen_A1/seen_A
+cleaned_exp <- as.data.table(cleaned_exp)
+cleaned_exp[, seen_probA1 := round(seen_A1 / seen_A, 3)]
+
+
+# seen_probA2 = seen_A2/seen_A
+cleaned_exp[, seen_probA2 := round(seen_A2 / seen_A, 3)]
+
+
+# seen_probB1 = seen_B1/seen_B
+cleaned_exp[, seen_probB1 := round(seen_B1 / seen_B, 3)]
+
+
+# seen_probB2 = seen_B2/seen_B
+cleaned_exp[, seen_probB2 := round(seen_B2 / seen_B, 3)]
+
+
+# seen_evA = outA1*seen_probA1 + outA2*seen_probA2
+cleaned_exp[, seen_evA := round(outA1*seen_probA1 + outA2*seen_probA2, 3)]
+
+
+# seen_evB = outB1*seen_probB1 + outB2*seen_probB2
+cleaned_exp[, seen_evB := round(outB1*seen_probB1 + outB2*seen_probB2, 3)]
+
+
+# Convert "outcome" to numeric
+cleaned_exp[, outcome := as.numeric(outcome)]
+
+# In order to calculate coefficient of variation, we need to calculate mean and std 
+
+# seen_meanA 
+cleaned_exp <- cleaned_exp %>%
+  group_by(identifier) %>%
+  mutate(seen_meanA = mean(outcome[option == "A"], na.rm = TRUE)) %>%
+  ungroup()
+
+# seen_meanB
+cleaned_exp <- cleaned_exp %>%
+  group_by(identifier) %>%
+  mutate(seen_meanB = mean(outcome[option == "B"], na.rm = TRUE)) %>%
+  ungroup()
+
+
+# seen_stdA
+cleaned_exp <- cleaned_exp %>%
+  group_by(identifier) %>%
+  mutate(seen_stdA = sd(outcome[option == "A"], na.rm = TRUE)) %>%
+  ungroup()
+
+# seen_stdB
+cleaned_exp <- cleaned_exp %>%
+  group_by(identifier) %>%
+  mutate(seen_stdB = sd(outcome[option == "B"], na.rm = TRUE)) %>%
+  ungroup()
+
+# seen_covA
+cleaned_exp <- as.data.table(cleaned_exp)
+
+cleaned_exp[, seen_covA := (seen_stdA / seen_meanA) , by = identifier]
+
+# seen_covB
+cleaned_exp[, seen_covB := (seen_stdB / seen_meanB) , by = identifier]
+
+# seen_risky
+cleaned_exp[, seen_risky := ifelse(is.na(seen_covA) & !is.na(seen_covB), "B",
+                                 ifelse(!is.na(seen_covA) & is.na(seen_covB), "A", 
+                                        ifelse(seen_covA > seen_covB, "A",
+                                               ifelse(seen_covB > seen_covA, "B", NA)))
+                                 )]
+
+```
+
+## Observed option with a higher expected return 
+a winner of the summary decision strategy
+
+```{r seen_exval , echo = TRUE}
+
+cleaned_exp[, seen_exval := ifelse(seen_evA > seen_evB, "A",
+                                   ifelse(seen_evA < seen_evB, "B", NA_character_))]
+
+```
+
+## Observed option as the winner of the round-wise decision strategy 
+
+```{r seen winner, echo = FALSE}
+cleaned_exp <- cleaned_exp %>% mutate(seen_outcomeA_higher_prob := case_when 
+                                      (seen_probA1 > seen_probA2 ~ outA1,
+                                       seen_probA1 < seen_probA2 ~ outA2))
+
+cleaned_exp <- cleaned_exp %>% mutate(seen_outcomeB_higher_prob := case_when 
+                                      ( seen_probB1 > seen_probB2 ~ outB1,
+                                        seen_probB1 < seen_probB2 ~ outB2))
+
+cleaned_exp[, seen_winner := ifelse( seen_outcomeA_higher_prob > seen_outcomeB_higher_prob, "A", "B") ]
+
+# seen_winner will return NA in such cases:
+# - seen_probA1 and seen_probA2 are 0.5 or seen_probB1 and seen_probB2 are 0.5
+# - only one of the option was sampled (eg: never sampled from option B)
+
+```
+
+## Properties of the sampling process
+  - sampling_total: total number of samples made before the decision
+  - sampling_switch : shows whether the option sampled is same with the previous option sampled
+  - sampling_switch_total : total number of switched occurred before the decision
+  - sampling_switch_ratio = sampling_switch_total/(sampling_total - 1)
+
+```{r sampling variables, echo = FALSE}
+
+# sampling_total : number of trials by identifier 
+cleaned_exp[, sampling_total := max(trial), by = identifier]
+
+
+# sampling switch 
+cleaned_exp[, sampling_switch := ifelse(trial == 1, "first",
+                                         ifelse(option != lag(option), "yes", "no")), by = identifier]
+
+
+# sampling_total_switch 
+cleaned_exp[, sampling_total_switch := sum(sampling_switch == "yes"), by = identifier]
+
+
+# sampling_switch_ratio (sampling_total_switch/(sampling_total-1))
+cleaned_exp[, sampling_switch_ratio := round(sampling_total_switch/(sampling_total-1), 3), 
+            by = identifier]
+
+# --> high switch ratio means that sampling_total_switch and sampling_total are close 
+
+```
+
+
+# Another definition of roundwise winner
+Finding the winner of the each small round and compare the number of winners that 
+an option has 
+
+## sampling round : uninterrepted sequence of options 
+  
+```{r sampling_round, echo = TRUE}
+
+# create a temp data table to keep only variables required to calculate 
+# sampling_round 
+
+temp <- cleaned_exp[, c("identifier", "sampling_switch" )]
+
+# Initialize "number of yes" to 0 for each identifier
+temp$number_of_yes <- 0
+
+# Update "number of yes" based on "sampling_switch" column
+temp[, number_of_yes := cumsum(sampling_switch == "yes"), by = identifier]
+
+# Initialize round column with NAs
+temp$round <- NA
+
+# Iterate through each row
+current_round <- 1
+
+for (i in 1:nrow(temp)) {
+
+  if (temp$sampling_switch[i] == "first") {
+    temp$round[i] <- 1
+    current_round <- 1
+  }
+
+  if (i > 1 && temp$identifier[i] == temp$identifier[i - 1]) {
+    if (temp$number_of_yes[i] == temp$number_of_yes[i - 1]) {
+      temp$round[i] <- current_round
+    } else {
+      if (temp$number_of_yes[i] %% 2 != 0) {
+        temp$round[i] <- current_round
+      } else {
+        current_round <- current_round + 1
+        temp$round[i] <- current_round
+      }
+    }
+  }
+}
+
+cleaned_exp[, sampling_round := temp$round]
+
+cleaned_exp[, round := temp$round]
+```
+
+## Round_completed
+round means uninterrepted sequence of options. so, some of the last rounds might be uncompleted.
+
+```{r round completed}
+
+# create column called round completed
+cleaned_exp[, round_completed := ifelse(uniqueN(option) == 2, TRUE, FALSE), by = c("identifier", "round")]
+
+```
+
+## round winner: the option with the higher sampled average return for each round
+
+  - round_seen_A & round_seen_B: how many times option A & B was seen during the run
+  - round_seen_A1 & round_seen_B1 : how many times outcome A1 & B1 was seen during the run
+  - round_seen_A2 & round_seen_B2 : how many times outcome A2 & B2 was seen during the run
+  - round_seen_probA1 & round_seen_probB1 : round_seen_A1 / round_seen_A
+  - round_seen_probA2 & round_seen_probB2 : round_seen_A2 / round_seen_A
+  - round_seen_evA & round_seen_evB : round_seen_probA1 * outA1 + round_seen_probA2 * outA2
+  - round_winner : comparison between round_seen_evA and round_seen_evB
+  - roundwise_winner : most frequent round_winner
+  
+```{r required variables for round_winner}
+
+# round_seen_A
+# count option A in a the round 
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
+  mutate(round_seen_A = sum(option == "A")) %>% 
+  ungroup()
+
+
+# round_seen_B
+# count option B in a the round
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
+  mutate(round_seen_B = sum(option == "B")) %>% 
+  ungroup()
+
+
+
+# round_seen_A1 (how many time that the participant saw outcome A1 in the round)
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
+  mutate(round_seen_A1 = sum(seen_outcome == "A1")) %>% 
+  ungroup()
+
+
+# round_seen_A2 (how many time that the participant saw outcome A2 in the round)
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
+  mutate(round_seen_A2 = sum(seen_outcome == "A2")) %>% 
+  ungroup()
+
+
+# round_seen_B1 (how many time that the participant saw outcome B1 in the round)
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
+  mutate(round_seen_B1 = sum(seen_outcome == "B1")) %>% 
+  ungroup()
+
+
+# round_seen_B2 (how many time that the participant saw outcome B2 in the run)
+cleaned_exp <- cleaned_exp %>%  group_by(identifier, round) %>% 
+  mutate(round_seen_B2 = sum(seen_outcome == "B2")) %>% 
+  ungroup()
+
+
+# round_seen_probA1 = round_seen_A1/round_seen_A
+cleaned_exp <- as.data.table(cleaned_exp)
+cleaned_exp[, round_seen_probA1 := round(round_seen_A1 / round_seen_A, 3)]
+
+
+# round_seen_probA2 = round_seen_A2/round_seen_A
+cleaned_exp[, round_seen_probA2 := round(round_seen_A2 / round_seen_A, 3)]
+
+
+# round_seen_probB1 = round_seen_B1/round_seen_B
+cleaned_exp[, round_seen_probB1 := round(round_seen_B1 / round_seen_B, 3)]
+
+
+# round_seen_probB2 = round_seen_B2/round_seen_B
+cleaned_exp[, round_seen_probB2 := round(round_seen_B2 / round_seen_B, 3)]
+
+
+# round_seen_evA = outA1*round_seen_probA1 + outA2*round_seen_probA2
+cleaned_exp[, round_seen_evA := round(outA1*round_seen_probA1 + outA2*round_seen_probA2, 3)]
+
+
+# round_seen_evB = outB1*round_seen_probB1 + outB2*round_seen_probB2
+cleaned_exp[, round_seen_evB := round(outB1*round_seen_probB1 + outB2*round_seen_probB2, 3)]
+
+
+```
+
+
+## round_winner : based on the comparison between round_seen_evA and round_seen_evB
+
+When round is *completed*
+  - round_seen_evA > round_seen_evB --> round_winner : A
+  - round_seen_evB > round_seen_evA --> round_winner : B
+  - round_seen_evA = round_seen_evA --> round_winner : no winner 
+
+When round is *uncomplete* 
+  - round_winner : undefined 
+  
+  
+```{r round winner}
+# The case we don't include uncompleted rounds to calculation
+cleaned_exp[, round_winner := ifelse( round_completed == FALSE, "undefined", 
+                                      ifelse(round_seen_evA > round_seen_evB, "A", 
+                                             ifelse(round_seen_evA < round_seen_evB, "B", 
+                                                    "no winner")))]
+
+```
+
+## roundwise winner 
+
+Based on only *completed* rounds, compare the number of times A and B 
+were winners of a round
+
+Step 1
+  - round_winner_A : how many times A was the round winner 
+  - round_winner_B : how many times B was the round winner 
+
+Step 2  
+roundwise_winner 
+  - round_winner_A > round_winner_B --> roundwise_winner : A 
+  - round_winner_B > round_winner_A --> roundwise_winner : B   
+  - round_winner_A = round_winner_B --> roundwise_winner : no winner  
+
+
+```{r round winner A and round winner B}
+
+temp2 <- cleaned_exp[, c("identifier", "trial", "sampling_round", "round", "round_winner")]
+
+# Initialize round_winner_A and round_winner_B for each identifier
+temp2$round_winner_A <- 0
+temp2$round_winner_B <- 0
+
+
+for(i in 1:nrow (temp2)) {
+  if (i == 1)
+  {
+    total_A <- 0
+    total_B <- 0
+    
+    if(temp2$round_winner[i] == "A") {
+      total_A <- total_A + 1 
+      temp2$round_winner_A[i] <- total_A
+      temp2$round_winner_B[i] <- total_B
+      
+    } else if (temp2$round_winner[i] == "B") {
+      total_B <- total_B + 1 
+      temp2$round_winner_A[i] <- total_A
+      temp2$round_winner_B[i] <- total_B
+      
+    } else {
+      temp2$round_winner_A[i] <- total_A
+      temp2$round_winner_B[i] <- total_B
+    }
+  } else {
+    
+    # check if we are still looking at the same identifier 
+    if(temp2$identifier[i] == temp2$identifier[i-1]) {
+      
+      # check if we are still looking at the same round 
+      if(temp2$round[i] == temp2$round[i-1]) {
+        temp2$round_winner_A[i] <- temp2$round_winner_A[i-1]
+        temp2$round_winner_B[i] <- temp2$round_winner_B[i-1]     
+      } else {
+      if(temp2$round_winner[i] == "A") {
+        total_A <- total_A + 1 
+      } else if (temp2$round_winner[i] == "B") {
+        total_B <- total_B + 1 
+      } else {
+        total_A <- total_A + 0
+        total_B <- total_B + 0
+      }
+        temp2$round_winner_A[i] <- total_A
+        temp2$round_winner_B[i] <- total_B
+    }
+    } else {
+      total_A <- 0
+      total_B <- 0 
+      
+      if (temp2$round_winner[i] == "A") {
+        total_A <- total_A + 1 
+      } else if (temp2$round_winner[i] == "B") {
+        total_B <- total_B + 1 
+      } else {
+        total_A <- total_A + 0
+        total_B <- total_B + 0
+      }
+      
+      temp2$round_winner_A[i] <- total_A
+      temp2$round_winner_B[i] <- total_B
+  }
+  }
+}
+  
+cleaned_exp$round_winner_A <- temp2$round_winner_A
+cleaned_exp$round_winner_B <- temp2$round_winner_B
+
+```
+
+Step 2 : Roundwise winner 
+```{r roundwise winner}
+
+temp2 <- as.data.table(temp2)
+
+temp2[, roundwise_winner := ifelse(max(round_winner_A) == max(round_winner_B), "no winner",
+                                                    ifelse(max(round_winner_A) > max(round_winner_B), "A", "B")),
+                     by = identifier]
+
+cleaned_exp$roundwise_winner <- temp2$roundwise_winner
+```
+
+# Choice related properties
+
+## Which decision strategy is chosen?
+  - seen_winner_chosen: if seen_winner and choice are the same 
+  - seen_exval_chosen: if seen_exval and choice are the same 
+  - seen_roundwise_winner_chosen : if the seen_roundwise_winner and choice are the same 
+
+
+```{r choice behavior}
+
+cleaned_exp[, seen_exval_chosen := ifelse(seen_exval == choice, TRUE, FALSE), by = identifier]
+
+cleaned_exp[, seen_winner_chosen := ifelse(seen_winner == choice, TRUE, FALSE), by = identifier]
+
+cleaned_exp[, seen_roundwise_winner_chosen := ifelse(roundwise_winner == choice, TRUE, FALSE), by = identifier]
+
+```
+
+
+# Create an indicator variable for the analysis 
+  - I1: A variable that shows if seen_exval and seen_winner are same
+  - I2: A variable that shows if seen_exval and roundwise_winner are same
+
+```{r indicator variable }
+
+cleaned_exp[, I1 := ifelse(seen_exval == seen_winner, TRUE, FALSE) ]
+cleaned_exp[, I2 := ifelse(seen_exval == roundwise_winner, TRUE, FALSE)]
+
+```
+
+# Sampling with completed rounds
+```{r}
+cleaned_exp[, sampling_uncompleted_round := ifelse(sum(round_completed == FALSE) > 0, TRUE, FALSE),
+            by = identifier]
+```
+
+
+# Create a data set without trial details 
+```{r}
+subset_dt <- cleaned_exp[trial == 1 , ]
+```
+
+# Write this data set to csv 
+```{r}
+write.csv(subset_dt, file = here("Data", "final_analysis_ready_data.csv"), row.names = FALSE)
+```
+
+

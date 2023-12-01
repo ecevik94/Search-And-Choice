@@ -1,0 +1,422 @@
+---
+title: "Descriptive_Analysis_final"
+author: "Emine Cevik"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+here::i_am("Code/Descriptive_Analysis_Final.Rmd")
+```
+
+```{r setup, include = TRUE, echo = FALSE}
+knitr::opts_chunk$set(message = FALSE)
+```
+
+```{r, warning = FALSE, echo = TRUE}
+library(tidyverse)
+library(openxlsx)
+library(data.table)
+library(ggplot2)
+library(here)
+library(ggpubr)
+library(patchwork)
+```
+
+# Read data set
+```{r read data set, echo = FALSE}
+#read the file 
+main_dt <- as.data.table(read.csv(here("Data", "final_analysis_ready_data.csv")))
+colnames(main_dt)
+```
+
+# Filter the decisions where participants didn't sample more than once 
+```{r}
+main_dt <- main_dt[main_dt[, sampling_total > 1]]
+```
+
+# Filter the decisions where participants didn't sample from both of the option
+```{r}
+cat("in ", main_dt[ seen_A == 0 | seen_B == 0, .N], " of the decisions, participants did not sample from both option\n")
+
+main_dt <- main_dt[main_dt[, seen_A > 0 & seen_B > 0 ]]
+```
+
+
+# Separate data based on domain 
+  - Since the results of ther analysis were similar over different domains, I decided to use only gain domain. 
+  - However, all operations will be also done for loss and mixed domain at the end
+```{r separate data}
+gain_dt <- main_dt[dom == "Gain", ]
+loss_dt <- main_dt[dom == "Loss", ]
+mixed_dt <- main_dt[dom == "Mixed", ]
+```
+
+# Check descriptive of the gain data 
+```{r, warning = FALSE, echo = TRUE}
+# Number of different session (identifier) 
+gain_dt[, .N]
+
+# Total number of participants 
+gain_dt[, uniqueN(participant)]
+
+# Total number of trials 
+gain_dt[, sum(sampling_total)]
+
+# Average length of sampling sequence by identifier 
+gain_dt[, mean(sampling_total)]
+
+# Average identifier by participant 
+# which shows the average number of problems that each participant solve 
+gain_dt[, .N]/gain_dt[, uniqueN(participant)]
+
+# Total number of studies
+gain_dt[, uniqueN(study)]
+
+```
+
+# Hills and Hertwig sample error control
+
+  - experiments where participants see all outcomes at least once
+  
+  - Did participants see all outcomes within the trial?
+
+```{r all outcomes are seen}
+
+total_seen_all <- gain_dt[seen_all == "TRUE", .N]
+percentage_of_seen_all <- round(total_seen_all/gain_dt[, .N], 3)
+
+print(paste0("Only in ", percentage_of_seen_all*100, "% of the run, participants saw all the outcomes"))
+
+```
+
+# Sampling total 1
+One of the properties of the sampling paradigm is that participants have a full control over how they sample 
+Previous findings foudn that people search frugally 
+
+```{r descriptives of length of the sampling sequence}
+
+cat("mean: ", mean(gain_dt$sampling_total), "\n")
+cat("median: ", median(gain_dt$sampling_total), "\n")
+cat("max: ", max(gain_dt$sampling_total), "\n")
+cat("min: ", min(gain_dt$sampling_total), "\n")
+
+```
+
+# Sampling total 2
+```{r histogram sampling total}
+
+# Create a histogram with a bin size of  
+# added median line to the graph
+
+plot1 <- ggplot(gain_dt, aes(x = sampling_total)) + geom_histogram(binwidth = 3, fill="black", col="grey") + 
+  geom_vline(xintercept = median(gain_dt$sampling_total), linetype = "dashed", color = "blue", size = 1) + 
+  annotate("text", x = 80, y = 750, label="Median sample size is 15", angle = 0, size = 6) +
+  labs(title = "Histogram of the length of the sampling sequences", 
+       x = "Sampling size",y = "Frequency", size = 35) + xlim(c(0,268)) + theme_classic() + 
+  theme(
+  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
+  axis.title = element_text(size = 16)
+) 
+
+
+plot1
+
+#
+ggsave("plot1.png", plot1)
+ 
+```
+
+# Sampling frequency 
+It is an important metric to be checked in detail. 
+
+  - When the sampling frequency is high, it is piecewise sampling 
+  - When the sampling frequency is low, it is comprehensive sampling strategy 
+  
+```{r descriptives of length of the sampling frequency}
+
+cat("mean: ", mean(gain_dt$sampling_switch_ratio), "\n")
+cat("median: ", median(gain_dt$sampling_switch_ratio), "\n")
+cat("max: ", max(gain_dt$sampling_switch_ratio), "\n")
+cat("min: ", min(gain_dt$sampling_switch_ratio), "\n")
+
+```  
+  
+
+```{r sampling frequency}
+# cleaned_exp[, sampling_switch_ratio := round(sampling_total_switch/(sampling_total-1), 3), by = identifier]
+
+# Based on the definition, if the sampling total is equal to 1, the switch ratio will be NA 
+
+# Create a histogram 
+# added median line to the graph
+
+
+plot2 <- ggplot(gain_dt, aes(x = sampling_switch_ratio)) + geom_histogram( fill="black", col="grey") + 
+  geom_vline(xintercept = median(gain_dt$sampling_switch_ratio, na.rm = TRUE), linetype = "dashed", color = "blue", size = 1) + 
+  labs(title = "Histogram of switching frequency",
+       x = "Switching frequency",
+       y = "Number of decisions") + annotate("text", x = 0.62, y = 1000, label="Median switching frequency is 0.29", angle = 0, size = 6) + theme_classic() + 
+  theme(
+  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
+  axis.title = element_text(size = 16)
+) 
+
+plot2
+
+ggsave("plot2.png", plot2)
+
+
+```
+
+It is interesting to see high number of cases where switching ratio is equal to 1. 
+
+(When it is closer to 1, it shows frequent switching behavior)
+
+Also it seems like there are clearly two different groups which is what we can pursue and ask questions about them 
+
+--> Bimodel distribution
+
+# How about the relationship between sampling frequency vs sampling total 
+
+```{r sampling frequency vs sampling total}
+
+cols <- c("Mean sample size by switcing frequency"="blue","Instance"="grey")
+
+# find the mean sampling_switch_ratio by sampling_total 
+gain_dt[, sampling_switch_ratio_mean := round(mean(sampling_switch_ratio),2), by = sampling_total]
+
+# find the mean sampling_total by sampling_switch_ratio
+gain_dt[, sampling_total_mean := round(mean(sampling_total),2), by = sampling_switch_ratio]
+
+plot3 <- ggplot(gain_dt) + geom_point( aes( x = sampling_total, y = sampling_switch_ratio), color = "gray", fill = "gray") +
+  geom_point(aes( x = sampling_total, y = sampling_switch_ratio_mean) ,color = "blue", fill = "blue") +
+  labs(title = "The relationship between sample size and switching frequency", 
+       x = "Sample size", y = "Switching frequency") +  scale_fill_manual(values = c("blue", "grey")) +theme_classic() + 
+  theme(
+  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
+  axis.title = element_text(size = 16)
+) 
+
+plot3
+
+ggsave("plot3.png", plot3)
+
+```
+High switching ratio --> low number samples 
+
+Correlation between switch ratio and sampling total
+
+```{r correlation coefficient}
+
+cor.test(gain_dt$sampling_total,gain_dt$sampling_switch_ratio,  method = "pearson")
+
+```
+
+# Choice related properties 
+## Descriptives 
+
+```{r}
+gain_dt[, .N , by = seen_exval_chosen]
+
+gain_dt[, .N , by = seen_winner_chosen]
+
+gain_dt[, .N , by = seen_roundwise_winner_chosen]
+
+```
+
+## How is the relationship between switching frequency and decision properties 
+
+### Step 1 : Create sampling frequency with different decimals 
+
+```{r sampling switch ratio with different decimals }
+# create sampling_switch_ratio_3 --> same with the current sampling_switch_ratio
+gain_dt[, sampling_switch_ratio_3 := sampling_switch_ratio]
+
+# create sampling_switch_ratio_2, by round sampling_switch_ratio to 2 
+gain_dt[, sampling_switch_ratio_2 := round(sampling_switch_ratio, 2)]
+
+# create sampling_switch_ratio_1, by round sampling_switch_ratio to 1
+gain_dt[, sampling_switch_ratio_1 := round(sampling_switch_ratio, 1)]
+```
+
+### Step 2 : calculate proportions 
+```{r calculate proportions}
+# Calculate proportion of seen_exval_chosen
+gain_dt[, seen_exval_chosen_proportion_3 := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_3]
+gain_dt[, seen_exval_chosen_proportion_2 := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_2]
+gain_dt[, seen_exval_chosen_proportion_1 := round(sum(seen_exval_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_1]
+
+
+# Calculate proportion of seen_winner_chosen
+gain_dt[, seen_winner_chosen_proportion_3 := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_3]
+gain_dt[, seen_winner_chosen_proportion_2 := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_2]
+gain_dt[, seen_winner_chosen_proportion_1 := round(sum(seen_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_1]
+
+
+# Calculate proportion of seen_roundwise_winner_chosen
+gain_dt[, seen_roundwise_winner_chosen_proportion_3 := round(sum(seen_roundwise_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_3]
+gain_dt[, seen_roundwise_winner_chosen_proportion_2 := round(sum(seen_roundwise_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_2]
+gain_dt[, seen_roundwise_winner_chosen_proportion_1 := round(sum(seen_roundwise_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_1]
+
+# Calculate proportion of seen_roundwise_winner_chosen
+gain_dt[, seen_roundwise_winner_chosen_proportion_3 := round(sum(seen_roundwise_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_3]
+gain_dt[, seen_roundwise_winner_chosen_proportion_2 := round(sum(seen_roundwise_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_2]
+gain_dt[, seen_roundwise_winner_chosen_proportion_1 := round(sum(seen_roundwise_winner_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_1]
+
+# Calculate proportion of seen_roundwise_winner_chosen
+gain_dt[, exval_chosen := ifelse(choice == exval, TRUE, FALSE)]
+
+gain_dt[, exval_chosen_proportion_3 := round(sum(exval_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_3]
+
+gain_dt[, exval_chosen_proportion_2 := round(sum(exval_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_2]
+
+gain_dt[, exval_chosen_proportion_1 := round(sum(exval_chosen == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio_1]
+
+
+
+```
+
+### Step 3 : prepare graphs 
+
+
+```{r}
+# Create graphs: sampling_switch_ratio vs seen_exval_chosen_proportion & seen_winner_chosen_proportion
+
+
+
+
+plot4 <- ggplot(gain_dt, aes(x = sampling_switch_ratio_2, y = seen_exval_chosen_proportion_2)) + 
+  geom_point() + geom_smooth(method = lm, se = FALSE, color = "blue") + labs(title = "Summary strategy") + 
+  ylab("Maximization of sampled average") +  xlab("Switching frequency") + theme_classic() + theme(
+  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
+  axis.title = element_text(size = 14)
+)+coord_fixed(ratio = 1) 
+
+plot5 <- ggplot(gain_dt, aes(x = sampling_switch_ratio_2, y = exval_chosen_proportion_2)) + 
+  geom_point() + geom_smooth(method = lm, se = FALSE, color = "blue") + labs(title = "Expected value") + 
+  ylab("Maximization of expected average") +  xlab("Switching frequency")+ theme_classic() + theme(
+  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
+  axis.title = element_text(size = 14)
+)+coord_fixed(ratio = 1)
+
+
+plot6 <- ggplot(gain_dt, aes(x = sampling_switch_ratio_2, y = seen_winner_chosen_proportion_2)) + 
+  geom_point() + geom_smooth(method = lm, se = FALSE, color = "blue") + labs(title = "Round-wise strategy") + 
+  ylab("Maximization of frequent winner") +  xlab("Switching frequency")+ theme_classic() + theme(
+  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
+  axis.title = element_text(size = 14)
+)+coord_fixed(ratio = 1)
+
+plot4
+plot5
+plot6
+
+ggsave("plot4.png", plot4,  width = 6, height = 6, units = "in")
+ggsave("plot5.png", plot5,  width = 6, height = 6, units = "in")
+ggsave("plot6.png", plot6,  width = 6, height = 6, units = "in")
+
+```
+
+# Proportion of true and false
+```{r}
+# Calculate proportions
+
+gain_dt[, true_seen_exval_chosen_proportion := round(sum(seen_exval_chosen == TRUE & I1 == TRUE, na.rm = TRUE) / sum(seen_exval_chosen == TRUE, na.rm = TRUE) ,3), 
+        by = sampling_switch_ratio_2]
+
+gain_dt[, false_seen_exval_chosen_proportion := round(sum(seen_exval_chosen == TRUE & I1 == FALSE, na.rm = TRUE) / sum(seen_exval_chosen == TRUE, na.rm = TRUE) ,3), 
+        by = sampling_switch_ratio_2]
+
+gain_dt[, true_seen_winner_chosen_proportion := round(sum(seen_winner_chosen == TRUE & I1 == TRUE, na.rm = TRUE) / sum(seen_winner_chosen == TRUE, na.rm = TRUE) ,3), 
+        by = sampling_switch_ratio_2]
+
+gain_dt[, false_seen_winner_chosen_proportion := round(sum(seen_winner_chosen == TRUE & I1 == FALSE, na.rm = TRUE) / sum(seen_winner_chosen == TRUE, na.rm = TRUE) ,3), 
+        by = sampling_switch_ratio_2]
+
+gain_dt[, true_exval_chosen_proportion := round(sum(exval_chosen == TRUE & I1 == TRUE, na.rm = TRUE) / sum(exval_chosen == TRUE, na.rm = TRUE) ,3), 
+        by = sampling_switch_ratio_2]
+
+gain_dt[, false_exval_chosen_proportion := round(sum(exval_chosen == TRUE & I1 == FALSE, na.rm = TRUE) / sum(exval_chosen == TRUE, na.rm = TRUE) ,3), 
+        by = sampling_switch_ratio_2]
+
+```
+
+```{r}
+plot7 <- ggplot(gain_dt, aes(x = sampling_switch_ratio_2)) +
+  geom_point(aes(y = true_seen_exval_chosen_proportion, color = "True"), size = 2) +
+  geom_point(aes(y = false_seen_exval_chosen_proportion, color = "False"), size = 2) +
+  geom_smooth(aes(y = true_seen_exval_chosen_proportion, color = "True"), method = "lm", se = FALSE) +
+  geom_smooth(aes(y = false_seen_exval_chosen_proportion, color = "False"), method = "lm", se = FALSE) +
+  scale_color_manual(name = "Indicator", 
+                     values = c("True" = "#666666", "False" = "blue"), 
+                     labels = c("True", "False")) +
+  theme_classic() +
+  labs(title = "Summary strategy", y = "Maximization of sampled average", x = "Switching frequency") + 
+  theme(
+    plot.title = element_text(color = "black", size = 16, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 16)
+  ) +
+  coord_fixed(ratio = 1)
+
+plot7
+#plot7
+#ggsave("plot7.png", plot7,  width = 6, height = 6, units = "in")
+```
+
+```{r}
+plot8 <- ggplot(gain_dt, aes(x = sampling_switch_ratio_2)) +
+  geom_point(aes(y = true_seen_winner_chosen_proportion, color = "True"), color = "#666666", size = 2) +
+  geom_point(aes(y = false_seen_winner_chosen_proportion, color = "False"), color = "blue", size = 2) +
+  geom_smooth(aes(y = true_seen_winner_chosen_proportion, color = "True"), method = "lm", na.rm = TRUE, se = FALSE, color = "#666666") +
+  geom_smooth(aes(y = false_seen_winner_chosen_proportion, color = "False"), method = "lm",na.rm = TRUE, se = FALSE, color = "blue") +
+  theme_classic() +
+  labs(title = "Round-wise strategy") + 
+  ylab("Maximization of frequent winner") +  xlab("Switching frequency")+ theme_classic() + theme(
+  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
+  axis.title = element_text(size = 16)
+) +coord_fixed(ratio = 1) 
+
+plot8
+ggsave("plot8.png", plot8,  width = 6, height = 6, units = "in")
+```
+
+```{r}
+
+plot9 <- ggplot(gain_dt, aes(x = sampling_switch_ratio_2)) +
+  geom_point(aes(y = true_exval_chosen_proportion, color = "True"), size = 2, color = "#666666") +
+  geom_point(aes(y = false_exval_chosen_proportion, color = "False"), size = 2, color = "blue") +
+  geom_smooth(aes(y = true_exval_chosen_proportion, color = "True"), method = "lm", se = FALSE, color = "#666666") +
+  geom_smooth(aes(y = false_exval_chosen_proportion, color = "False"), method = "lm", se = FALSE, color = "blue") +
+  theme_classic() +labs(title = "Expected value") + 
+  ylab("Maximization of expected average") +  xlab("Switching frequency")+ theme_classic() + theme(
+  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
+  axis.title = element_text(size = 16)
+) + coord_fixed(ratio = 1) 
+plot9
+ggsave("plot9.png", plot9,  width = 6, height = 6, units = "in")
+```
+
+
+
+# Data is for modelling
+```{r}
+
+write.csv(gain_dt, file = here("Data", "model_ready_data.csv"), row.names = FALSE)
+
+```

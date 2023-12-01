@@ -1,0 +1,244 @@
+---
+title: "Models_Final"
+author: "Emine Cevik"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+here::i_am("Code/Models_Final.Rmd")
+```
+
+```{r setup, include = TRUE, echo = FALSE}
+knitr::opts_chunk$set(message = FALSE)
+```
+
+```{r, warning = FALSE}
+library(tidyverse)
+library(openxlsx)
+library(data.table)
+library(here)
+library(lme4)
+library(stargazer)
+```
+
+# Read data
+Read main data 
+```{r, warning = FALSE, echo = TRUE}
+#read the file 
+model_dt <- as.data.table(read.csv(here("Data", "model_ready_data.csv")))
+colnames(model_dt)
+
+```
+
+```{r}
+model_dt[, I5 := ifelse(exval == seen_winner, 1, 0)]
+```
+
+# Logistic regression 
+## Seen_exval
+### Model1.1: 
+DV: seen_exval_chosen, IV: sampling_switch_ratio
+
+```{r}
+log1.1 <- glm( seen_exval_chosen ~ sampling_switch_ratio , 
+               data = model_dt, family = binomial)
+summary(log1.1)
+```
+Results:
+
+  - Coefficient of switching_ratio is significant and positive. It means that
+  when switching ratio increases, the odds of seen_exval_chosen increases 
+  - High switching ratio --> high chance of seen_exval_chosen 
+  - High switching ratio correlates with low number samples. Does it mean that 
+  the participants can also recognize seen_exval when they are frequent switcher?
+    - It could be the case if seen_winner and seen_exval are same (I1)?
+
+### Model1.2: 
+DV: seen_exval_chosen, IV: sampling_switch_ratio + I1 (seen_exval = seen_winner)
+```{r}
+log1.2 <- glm( seen_exval_chosen ~ sampling_switch_ratio + I1 , 
+               data = model_dt, family = binomial)
+summary(log1.2)
+```
+Results:
+
+  - When we control for I1, the effect of sampling_switch_ratio decreased
+  - But still increasing switch ratio increases the odds of seen_exval_chosen
+  - When seen_exval and seen_winner is same I1 is 1. So when both of them are same 
+  the odds of seen_exval_chosen increases
+  
+  
+### Model1.3: 
+DV: seen_exval_chosen, IV: sampling_switch_ratio + I1 + I1*sampling_switch_ratio
+```{r}
+log1.3 <- glm( seen_exval_chosen ~ sampling_switch_ratio + I1 +
+                 I1*sampling_switch_ratio, data = model_dt, family = binomial)
+summary(log1.3)
+```
+
+Result:
+
+When I1 = 0, so seen_exal and seen_winner is not same, increase in sampling_switch_ratio
+decreases the odd of seen_exval_chosen 
+
+When I1 = 1, it increases the odds of seen_exval_chosen but sampling_switch_ratio will 
+also have a postive effect on this 
+
+## Seen_winner
+### Model2.1: 
+DV: seen_winner_chosen, IV: sampling_switch_ratio
+
+```{r}
+log2.1 <- glm( seen_winner_chosen ~ sampling_switch_ratio , data = model_dt, family = binomial)
+summary(log2.1)
+```
+
+### Model2.2: 
+DV: seen_winner_chosen, IV: sampling_switch_ratio + I1 (seen_exval = seen_winner)
+```{r}
+log2.2 <- glm( seen_winner_chosen ~ sampling_switch_ratio + I1 , 
+               data = model_dt, family = binomial)
+summary(log2.2)
+```
+
+### Model2.3: 
+DV: seen_winner_chosen, IV: sampling_switch_ratio + I1 + I1*sampling_switch_ratio
+```{r}
+log2.3 <- glm( seen_winner_chosen ~ sampling_switch_ratio + I1 +
+                 I1*sampling_switch_ratio, data = model_dt, family = binomial)
+summary(log2.3)
+```
+
+## Seen_roundwise_winnner
+### Model3.1: 
+
+DV: seen_roundwise_winner_chosen, IV: sampling_switch_ratio
+
+```{r}
+log3.1 <- glm( seen_roundwise_winner_chosen ~ sampling_switch_ratio , data = model_dt, family = binomial)
+summary(log3.1)
+```
+
+### Model3.2: 
+DV: seen_roundwise_winner_chosen, IV: sampling_switch_ratio + I2 (seen_exval = seen_roundwise_winner_chosen)
+```{r}
+log3.2 <- glm( seen_roundwise_winner_chosen ~ sampling_switch_ratio + I2 , 
+               data = model_dt, family = binomial)
+summary(log3.2)
+```
+
+### Model3.3: 
+DV: seen_roundwise_winner_chosen, IV: sampling_switch_ratio + I2 + I2*sampling_switch_ratio
+```{r}
+log3.3 <- glm( seen_roundwise_winner_chosen ~ sampling_switch_ratio + I2 +
+                 I2*sampling_switch_ratio, data = model_dt, family = binomial)
+summary(log3.3)
+```
+
+## exval_chosen
+### Model4.1: 
+
+DV: exval_chosen, IV: sampling_switch_ratio
+
+```{r}
+log4.1 <- glm( exval_chosen ~ sampling_switch_ratio , data = model_dt, family = binomial)
+summary(log4.1)
+```
+
+### Model4.2: 
+DV: exval_chosen, IV: sampling_switch_ratio + I4 (seen_exval = exval)
+```{r}
+model_dt[, I4 := ifelse(exval == seen_exval, 1, 0)]
+
+log4.2 <- glm( exval_chosen ~ sampling_switch_ratio + I4 , 
+               data = model_dt, family = binomial)
+summary(log4.2)
+```
+
+### Model4.3: 
+DV: exval_chosen, IV: sampling_switch_ratio + I4 + I4*sampling_switch_ratio
+```{r}
+log4.3 <- glm( exval_chosen ~ sampling_switch_ratio + I4 +
+                 I4 * sampling_switch_ratio, data = model_dt, family = binomial)
+summary(log4.3)
+```
+
+
+### Model5.1: 
+
+DV: exval_chosen, IV: sampling_switch_ratio
+```{r}
+log5.1 <- glm( exval_chosen ~ sampling_switch_ratio , data = model_dt, family = binomial)
+summary(log5.1)
+```
+
+### Model5.2: 
+DV: exval_chosen, IV: sampling_switch_ratio + I5 (seen_exval = exval)
+```{r}
+
+log5.2 <- glm( exval_chosen ~ sampling_switch_ratio + I5 , 
+               data = model_dt, family = binomial)
+summary(log5.2)
+```
+
+### Model5.3: 
+DV: exval_chosen, IV: sampling_switch_ratio + I5 + I5*sampling_switch_ratio
+```{r}
+log5.3 <- glm( exval_chosen ~ sampling_switch_ratio + I5 +
+                 I5 * sampling_switch_ratio, data = model_dt, family = binomial)
+summary(log5.3)
+```
+
+
+
+
+# Analysis presented on the paper 
+```{r}
+model_dt[, I:= I1]
+model_dt[, sampled_ev_chosen :=  seen_exval_chosen]
+model_dt[, stated_ev_chosen :=  exval_chosen]
+model_dt[, roundwise_chosen :=  seen_winner_chosen]
+model_dt[, switching_frequency :=  sampling_switch_ratio]
+
+
+model_sampled_ev <- model_dt[!is.na(I) & !is.na(sampled_ev_chosen), ]
+model_stated_ev <- model_dt[ !is.na(I) & !is.na(stated_ev_chosen), ]
+model_roundwise_chosen <- model_dt[!is.na(I) & !is.na(seen_winner_chosen), ]
+
+m_1 <- glmer(sampled_ev_chosen ~ switching_frequency + I + I*switching_frequency + (1 | study) + (1 |study:participant),
+                            data = model_sampled_ev, family = binomial)
+
+m_2 <- glmer(stated_ev_chosen ~ switching_frequency + I + I*switching_frequency +  (1 | study) + (1 |study:participant),
+                            data = model_stated_ev, family = binomial)
+
+m_3 <- glmer(roundwise_chosen ~ switching_frequency + I + I*switching_frequency + (1 | study) + (1 |study:participant),
+                            data = model_roundwise_chosen, family = binomial)
+
+m_01 <- glmer(seen_exval_chosen ~  (1 | study) + (1 | study:participant),
+                            data = model_sampled_ev, family = binomial)
+
+m_02 <- glmer(seen_exval_chosen ~  (1 | study) + (1 | study:participant),
+                            data = model_stated_ev, family = binomial)
+
+m_03 <- glmer(seen_exval_chosen ~  (1 | study) + (1 | study:participant),
+                            data = model_roundwise_chosen, family = binomial)
+model_0 <- glmer(seen_exval_chosen ~  (1 | study) + (1 | study:participant),
+                            data = model_stated_ev, family = binomial)
+
+```
+
+```{r}
+anova(m_01,m_1)
+```
+
+
+```{r}
+
+stargazer(m_1, m_2, m_3, type="latex",
+          out="star_linear_3.doc")
+
+```
+
+
+
