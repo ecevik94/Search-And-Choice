@@ -109,21 +109,21 @@ cat("min: ", min(gain_dt$sampling_total), "\n")
 # Create a histogram with a bin size of  
 # added median line to the graph
 
-plot1 <- ggplot(gain_dt, aes(x = sampling_total)) + geom_histogram(binwidth = 3, fill="black", col="grey") + 
-  geom_vline(xintercept = median(gain_dt$sampling_total), linetype = "dashed", color = "blue", size = 1) + 
-  annotate("text", x = 80, y = 750, label="Median sample size is 15", angle = 0, size = 6) +
-  labs(title = "Histogram of the length of the sampling sequences", 
-       x = "Sampling size",y = "Frequency", size = 35) + xlim(c(0,268)) + theme_classic() + 
-  theme(
-  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
-  axis.title = element_text(size = 16)
-) 
+# Histogram
+histogram <- ggplot(gain_dt[sampling_total < 110,], aes(x = sampling_total)) + 
+  geom_histogram(binwidth = 3, fill = "black", col = "grey") +
+  theme_minimal()
 
 
-plot1
+# Combine graphs with dual y-axes
+combined_plot <- histogram + 
+  geom_line(aes(x = sampling_total, y = seen_all_prop*1000), color = "blue") +
+  scale_y_continuous(name = "Frequency of sample size", sec.axis = sec_axis(~.*0.001, name = "The proportion of cases where all\n outcomes are seen")) + labs(x = "Sample size") + theme_classic() +
+  theme(axis.title = element_text(size = 14), text = element_text(family = "Times New Roman")) 
 
-#
-ggsave("plot1.png", plot1)
+combined_plot
+
+ggsave("Figure_4.png", combined_plot)
  
 ```
 
@@ -152,19 +152,21 @@ cat("min: ", min(gain_dt$sampling_switch_ratio), "\n")
 # added median line to the graph
 
 
-plot2 <- ggplot(gain_dt, aes(x = sampling_switch_ratio)) + geom_histogram( fill="black", col="grey") + 
-  geom_vline(xintercept = median(gain_dt$sampling_switch_ratio, na.rm = TRUE), linetype = "dashed", color = "blue", size = 1) + 
-  labs(title = "Histogram of switching frequency",
-       x = "Switching frequency",
-       y = "Number of decisions") + annotate("text", x = 0.62, y = 1000, label="Median switching frequency is 0.29", angle = 0, size = 6) + theme_classic() + 
-  theme(
-  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
-  axis.title = element_text(size = 16)
-) 
-
+plot2 <- ggplot(gain_dt, aes(x = sampling_switch_ratio)) + 
+  geom_histogram(fill = "black", col = "grey") + 
+  geom_vline(xintercept = median(gain_dt$sampling_switch_ratio, na.rm = TRUE), 
+             linetype = "dashed", color = "blue", size = 1) + 
+  labs(x = "Switching frequency",
+       y = "Number of decisions", ) + 
+  annotate("text", x = 0.50, y = 1000, 
+           label = "Median switching frequency is 0.29", 
+           angle = 0, size = 4, family = "Times New Roman") + theme_classic()+
+  theme(axis.title = element_text(size = 14, family = "Times New Roman"),
+        text = element_text(family = "Times New Roman")) 
 plot2
 
-ggsave("plot2.png", plot2)
+
+ggsave("Figure_5.png", plot2)
 
 
 ```
@@ -189,18 +191,17 @@ gain_dt[, sampling_switch_ratio_mean := round(mean(sampling_switch_ratio),2), by
 # find the mean sampling_total by sampling_switch_ratio
 gain_dt[, sampling_total_mean := round(mean(sampling_total),2), by = sampling_switch_ratio]
 
-plot3 <- ggplot(gain_dt) + geom_point( aes( x = sampling_total, y = sampling_switch_ratio), color = "gray", fill = "gray") +
-  geom_point(aes( x = sampling_total, y = sampling_switch_ratio_mean) ,color = "blue", fill = "blue") +
-  labs(title = "The relationship between sample size and switching frequency", 
-       x = "Sample size", y = "Switching frequency") +  scale_fill_manual(values = c("blue", "grey")) +theme_classic() + 
+plot3 <- ggplot(gain_dt) + geom_point( aes( y = sampling_total, x = sampling_switch_ratio), color = "gray", fill = "gray") +
+  geom_point(aes( y = sampling_total, x = sampling_switch_ratio_mean) ,color = "blue", fill = "blue") +
+  labs(
+       x = "Switching frequency", y = "Sample size") +  scale_fill_manual(values = c("blue", "grey")) +theme_classic() + 
   theme(
   plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
-  axis.title = element_text(size = 16)
+  axis.title = element_text(size = 16), text = element_text(family = "Times New Roman")
 ) 
 
 plot3
-
-ggsave("plot3.png", plot3)
+ggsave("Figure_6.png", plot3)
 
 ```
 High switching ratio --> low number samples 
@@ -212,6 +213,59 @@ Correlation between switch ratio and sampling total
 cor.test(gain_dt$sampling_total,gain_dt$sampling_switch_ratio,  method = "pearson")
 
 ```
+
+# How about the relationship between sampling frequency vs information acquired
+
+```{r sampling frequency vs information acquire - 1}
+
+gain_dt[, seen_exp_exval_same := ifelse(seen_exval == exval, TRUE, FALSE)]
+
+gain_dt[, prop_seen_exp_exval_same := round(sum(seen_exp_exval_same == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio]
+
+
+figure7 <- ggplot(gain_dt, aes(x = sampling_switch_ratio, y = prop_seen_exp_exval_same)) + 
+  geom_point(aes(x = sampling_switch_ratio, y = prop_seen_exp_exval_same), color = "#666666", fill = "#666666") + geom_smooth(method = lm, se = FALSE, color = "blue") + 
+  ylab("Proportion of cases where expected and\n observed average indicate the same option") +  xlab("Switching frequency")+ theme_classic() + theme(
+  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
+  axis.title = element_text(size = 14), text = element_text(family = "Times New Roman")
+)+coord_fixed(ratio = 1)
+
+figure7
+
+ggsave("Figure7A.png", figure7)
+
+```
+
+```{r}
+cor.test(gain_dt$sampling_switch_ratio, gain_dt$prop_seen_exp_exval_same)
+```
+
+```{r sampling frequency vs information acquire - 2}
+
+gain_dt[, seen_exval_winner_same := ifelse(seen_exval == seen_winner, TRUE, FALSE)]
+
+gain_dt[, prop_seen_exval_winner_same := round(sum(seen_exval_winner_same == TRUE, na.rm = TRUE) / .N ,3), 
+        by = sampling_switch_ratio]
+
+
+figure7_2 <- ggplot(gain_dt, aes(x = sampling_switch_ratio, y = prop_seen_exval_winner_same)) + 
+  geom_point(aes(x = sampling_switch_ratio, y = prop_seen_exval_winner_same), color = "#666666", fill = "#666666") + geom_smooth(method = lm, se = FALSE, color = "blue") + 
+  ylab("Proportion of cases where frequent winner\n has also higher sampled average") +  xlab("Switching frequency")+ theme_classic() + theme(
+  plot.title = element_text(color = "black", size = 16, face = "bold",hjust = 0.5),
+  axis.title = element_text(size = 14), text = element_text(family = "Times New Roman")
+)+coord_fixed(ratio = 1)
+
+figure7_2
+ggsave("Figure7B.png", figure7_2)
+
+```
+
+```{r}
+cor.test(gain_dt$sampling_switch_ratio, gain_dt$prop_seen_exval_winner_same)
+```
+
+
 
 # Choice related properties 
 ## Descriptives 
@@ -239,6 +293,7 @@ gain_dt[, sampling_switch_ratio_2 := round(sampling_switch_ratio, 2)]
 # create sampling_switch_ratio_1, by round sampling_switch_ratio to 1
 gain_dt[, sampling_switch_ratio_1 := round(sampling_switch_ratio, 1)]
 ```
+
 
 ### Step 2 : calculate proportions 
 ```{r calculate proportions}
