@@ -8,3 +8,4 @@ Articles/
 *.html
 *.png
 *.doc
+.DS_Store
